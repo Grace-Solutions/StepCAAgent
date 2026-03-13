@@ -4,6 +4,9 @@ package config
 
 import "path/filepath"
 
+// ServiceName is the canonical service name, embedded in code rather than config.
+const ServiceName = "stepcaagent"
+
 // Root is the top-level configuration structure.
 // It contains global settings under Settings and per-certificate
 // definitions under Provisioners.
@@ -14,8 +17,6 @@ type Root struct {
 
 // Settings holds all global/service-level configuration.
 type Settings struct {
-	Version       int          `json:"version"`
-	ServiceName   string       `json:"serviceName"`
 	BaseDirectory string       `json:"baseDirectory"` // root for all data; default: <binary_dir>/data
 	PollInterval  string       `json:"pollInterval"`
 	LogLevel      string       `json:"logLevel"`

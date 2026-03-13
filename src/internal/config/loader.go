@@ -98,12 +98,6 @@ func (r *Root) ResolveVariables() error {
 // applyDefaults fills in missing default values.
 func (r *Root) applyDefaults() error {
 	s := &r.Settings
-	if s.Version == 0 {
-		s.Version = 1
-	}
-	if s.ServiceName == "" {
-		s.ServiceName = "stepcaagent"
-	}
 	if s.PollInterval == "" {
 		s.PollInterval = "15m"
 	}
@@ -197,10 +191,6 @@ func expandEnvVars(s string) string {
 
 // Validate checks required fields and internal consistency.
 func (r *Root) Validate() error {
-	if r.Settings.Version < 1 {
-		return fmt.Errorf("version must be >= 1")
-	}
-
 	names := make(map[string]bool)
 	for i, p := range r.Provisioners {
 		if p.Name == "" {
@@ -222,9 +212,7 @@ func (r *Root) Validate() error {
 func GenerateSample() ([]byte, error) {
 	sample := Root{
 		Settings: Settings{
-			Version:     1,
-			ServiceName: "stepcaagent",
-			LogLevel:    "info",
+			LogLevel: "info",
 			Bootstrap: Bootstrap{
 				CAUrl: "https://ca.example.com",
 			},
@@ -242,7 +230,7 @@ func GenerateSample() ([]byte, error) {
 			},
 		},
 	}
-	return json.MarshalIndent(sample, "", "  ")
+	return json.MarshalIndent(sample, "", "    ")
 }
 
 

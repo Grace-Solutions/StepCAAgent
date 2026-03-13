@@ -315,7 +315,7 @@ func (a *agentService) Stop(s service.Service) error {
 
 func newServiceConfig() *service.Config {
 	return &service.Config{
-		Name:        "stepcaagent",
+		Name:        config.ServiceName,
 		DisplayName: "Step CA Agent",
 		Description: "Certificate lifecycle agent for Step CA environments",
 	}
