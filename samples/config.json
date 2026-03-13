@@ -1,0 +1,55 @@
+{
+  "Settings": {
+    "version": 1,
+    "serviceName": "StepCAAgent",
+    "logLevel": "info",
+    "bootstrap": {
+      "caUrl": "https://ca.corp.example.com:9000"
+    },
+    "trust": {
+      "installRoots": true,
+      "refreshInterval": "24h"
+    }
+  },
+  "Provisioners": [
+    {
+      "name": "workstation-identity",
+      "enabled": true,
+      "issuer": {
+        "mode": "step-ca",
+        "provisioner": "device-identity"
+      },
+      "subject": {
+        "commonName": "auto",
+        "dnsNames": ["auto", "${serial}"],
+        "ipAddresses": ["auto"]
+      },
+      "auth": {
+        "type": "provisioner-password",
+        "tokenPath": "auth/device-identity.token"
+      }
+    },
+    {
+      "name": "web-api-tls",
+      "enabled": true,
+      "issuer": {
+        "mode": "step-ca",
+        "provisioner": "svc-web"
+      },
+      "subject": {
+        "commonName": "${fqdn_1}",
+        "dnsNames": ["${fqdn_1}", "${hostname}"],
+        "ipAddresses": ["${ipv4_1}"]
+      },
+      "key": {
+        "algorithm": "EC",
+        "curve": "P384"
+      },
+      "auth": {
+        "type": "provisioner-password",
+        "password": "CHANGE-ME-provisioner-secret"
+      }
+    }
+  ]
+}
+
