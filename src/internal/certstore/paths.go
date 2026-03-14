@@ -16,7 +16,8 @@ const (
 	CertFile     = "certificate.crt"
 	KeyFile      = "private.key"
 	ChainFile    = "chain.crt"
-	RootFile     = "root_ca.crt"
+	RootDir      = "root"
+	RootFile     = "root.crt"
 )
 
 // Paths holds the resolved file paths for a provisioner's certificate files.
@@ -72,9 +73,9 @@ func (p *Paths) EnsureDir() error {
 }
 
 // RootCAPath returns the path to the trusted root CA certificate
-// under the given certificates directory.
+// under the given certificates directory: <certsDir>/root/root.crt
 func RootCAPath(certsDir string) string {
-	return filepath.Join(certsDir, RootFile)
+	return filepath.Join(certsDir, RootDir, RootFile)
 }
 
 // WriteCert writes certificate data to the provisioner's cert file with restrictive permissions.

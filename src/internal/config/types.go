@@ -78,8 +78,8 @@ type Trust struct {
 type Provisioner struct {
 	Name           string       `json:"name"`
 	Enabled        bool         `json:"enabled"`
-	InstallToStore bool         `json:"installToStore"` // if true, import cert into Windows Certificate Store
-	Issuer         Issuer       `json:"issuer"`
+	InstallToStore bool         `json:"installToStore"`   // if true, import cert into Windows Certificate Store
+	CAProvisioner  string       `json:"caProvisioner"`    // provisioner name on the CA; defaults to Name if empty
 	Subject        Subject      `json:"subject"`
 	Key            Key          `json:"key"`
 	Renewal        Renewal      `json:"renewal"`
@@ -89,11 +89,13 @@ type Provisioner struct {
 	Hooks          Hooks        `json:"-"` // retained for future use; not exposed in config (security: arbitrary command execution)
 }
 
-// Issuer describes how to issue the certificate.
-type Issuer struct {
-	Mode        string `json:"mode"` // "step-ca", "acme"
-	Provisioner string `json:"provisioner"`
-	Profile     string `json:"profile"`
+// CAProvisionerName returns the provisioner name to use on the CA.
+// If CAProvisioner is set, it takes precedence over Name.
+func (p Provisioner) CAProvisionerName() string {
+	if p.CAProvisioner != "" {
+		return p.CAProvisioner
+	}
+	return p.Name
 }
 
 // Subject holds certificate subject/SAN fields.

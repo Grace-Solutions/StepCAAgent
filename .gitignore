@@ -27,6 +27,9 @@ go.work.sum
 # env file
 .env
 
+# Runtime data (state DB, certificates, logs)
+binaries/data/
+
 # Live config (use config.json.example as template)
 samples/config.json
 

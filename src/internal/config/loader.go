@@ -221,7 +221,7 @@ func GenerateSample() ([]byte, error) {
 			{
 				Name:    "workstation-identity",
 				Enabled: true,
-				Issuer:  Issuer{Mode: "step-ca", Provisioner: "device-identity"},
+				CAProvisioner: "device-identity",
 				Subject: Subject{
 					CommonName: "auto",
 					DNSNames:   []string{"auto"},

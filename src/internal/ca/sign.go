@@ -87,17 +87,21 @@ func (c *Client) RenewCertificate(prov config.Provisioner, db *state.DB) error {
 			"intermediateStore", "CA",
 			"rootStore", "ROOT")
 
-		if err := certstore.InstallLeafToStore(certPEM); err != nil {
+		friendlyLeaf := fmt.Sprintf("StepCA - %s", prov.Name)
+		friendlyIntermediate := fmt.Sprintf("StepCA - %s (Intermediate)", prov.Name)
+		friendlyRoot := "StepCA Root CA"
+
+		if err := certstore.InstallLeafToStore(certPEM, friendlyLeaf); err != nil {
 			log.Error("store install FAILED for renewed leaf certificate",
 				"provisioner", prov.Name, "store", "MY", "error", err)
 		} else {
 			log.Info("store install SUCCESS: renewed leaf certificate installed",
-				"provisioner", prov.Name, "store", "MY")
+				"provisioner", prov.Name, "store", "MY", "friendlyName", friendlyLeaf)
 			storeInstalled = true
 		}
 
 		if len(chainPEM) > 0 {
-			if err := certstore.InstallIntermediateToStore(chainPEM); err != nil {
+			if err := certstore.InstallIntermediateToStore(chainPEM, friendlyIntermediate); err != nil {
 				log.Error("store install FAILED for intermediate certificate",
 					"provisioner", prov.Name, "store", "CA", "error", err)
 			} else {
@@ -108,7 +112,7 @@ func (c *Client) RenewCertificate(prov config.Provisioner, db *state.DB) error {
 
 		rootPath := certstore.RootCAPath(c.CertsDir)
 		if rootPEM, err := os.ReadFile(rootPath); err == nil {
-			if err := certstore.InstallRootToStore(rootPEM); err != nil {
+			if err := certstore.InstallRootToStore(rootPEM, friendlyRoot); err != nil {
 				log.Error("store install FAILED for root CA",
 					"provisioner", prov.Name, "store", "ROOT", "error", err)
 			} else {

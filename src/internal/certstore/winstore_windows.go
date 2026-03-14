@@ -6,6 +6,8 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
+	"syscall"
+	"unicode/utf16"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -20,9 +22,27 @@ const (
 	StoreMy   = "MY"   // Personal (leaf / server / client certs)
 )
 
+// CryptoAPI constants not in x/sys/windows
+const (
+	CERT_FRIENDLY_NAME_PROP_ID = 11
+)
+
+// Lazy-loaded CryptoAPI functions not available in x/sys/windows
+var (
+	modCrypt32                        = syscall.NewLazyDLL("crypt32.dll")
+	procCertSetCertificateContextProp = modCrypt32.NewProc("CertSetCertificateContextProperty")
+)
+
+// CRYPT_DATA_BLOB represents the Windows CRYPT_DATA_BLOB structure.
+type cryptDataBlob struct {
+	Size uint32
+	Data *byte
+}
+
 // InstallCertToStore imports a PEM-encoded certificate into the named
-// Windows certificate store (e.g., "ROOT", "CA", "MY").
-func InstallCertToStore(certPEM []byte, storeName string) error {
+// Windows certificate store (e.g., "ROOT", "CA", "MY"). If friendlyName
+// is non-empty, it is set as the certificate's Friendly Name property.
+func InstallCertToStore(certPEM []byte, storeName, friendlyName string) error {
 	log := logging.Logger()
 
 	block, _ := pem.Decode(certPEM)
@@ -37,18 +57,25 @@ func InstallCertToStore(certPEM []byte, storeName string) error {
 
 	log.Info("installing certificate into Windows store",
 		"store", storeName,
+		"scope", "Local Machine",
 		"subject", cert.Subject.CommonName,
-		"serial", cert.SerialNumber)
+		"serial", cert.SerialNumber,
+		"friendlyName", friendlyName)
 
-	// Open the system certificate store
+	// Open the Local Machine system certificate store
 	storeNameUTF16, err := windows.UTF16PtrFromString(storeName)
 	if err != nil {
 		return fmt.Errorf("winstore: UTF16 store name: %w", err)
 	}
 
-	store, err := windows.CertOpenSystemStore(0, storeNameUTF16)
+	store, err := windows.CertOpenStore(
+		windows.CERT_STORE_PROV_SYSTEM,
+		0, 0,
+		windows.CERT_SYSTEM_STORE_LOCAL_MACHINE,
+		uintptr(unsafe.Pointer(storeNameUTF16)),
+	)
 	if err != nil {
-		return fmt.Errorf("winstore: open store %q: %w", storeName, err)
+		return fmt.Errorf("winstore: open store %q (Local Machine): %w", storeName, err)
 	}
 	defer windows.CertCloseStore(store, 0)
 
@@ -63,6 +90,14 @@ func InstallCertToStore(certPEM []byte, storeName string) error {
 	}
 	defer windows.CertFreeCertificateContext(certContext)
 
+	// Set friendly name property before adding to store
+	if friendlyName != "" {
+		if err := setFriendlyName(certContext, friendlyName); err != nil {
+			log.Warn("failed to set friendly name, continuing without it",
+				"friendlyName", friendlyName, "error", err)
+		}
+	}
+
 	// Add to store (CERT_STORE_ADD_REPLACE_EXISTING = 3)
 	if err := windows.CertAddCertificateContextToStore(store, certContext, 3, nil); err != nil {
 		return fmt.Errorf("winstore: add to store %q: %w", storeName, err)
@@ -70,7 +105,28 @@ func InstallCertToStore(certPEM []byte, storeName string) error {
 
 	log.Info("certificate installed into Windows store",
 		"store", storeName,
-		"subject", cert.Subject.CommonName)
+		"subject", cert.Subject.CommonName,
+		"friendlyName", friendlyName)
+	return nil
+}
+
+// setFriendlyName sets the CERT_FRIENDLY_NAME_PROP_ID property on a cert context.
+func setFriendlyName(ctx *windows.CertContext, name string) error {
+	// The friendly name must be a null-terminated UTF-16 string
+	utf16Str := utf16.Encode([]rune(name + "\x00"))
+	blob := cryptDataBlob{
+		Size: uint32(len(utf16Str) * 2),
+		Data: (*byte)(unsafe.Pointer(&utf16Str[0])),
+	}
+	r1, _, err := procCertSetCertificateContextProp.Call(
+		uintptr(unsafe.Pointer(ctx)),
+		uintptr(CERT_FRIENDLY_NAME_PROP_ID),
+		0,
+		uintptr(unsafe.Pointer(&blob)),
+	)
+	if r1 == 0 {
+		return fmt.Errorf("CertSetCertificateContextProperty: %w", err)
+	}
 	return nil
 }
 
@@ -92,9 +148,14 @@ func IsCertInStore(certPEM []byte, storeName string) (bool, error) {
 		return false, fmt.Errorf("winstore: UTF16 store name: %w", err)
 	}
 
-	store, err := windows.CertOpenSystemStore(0, storeNameUTF16)
+	store, err := windows.CertOpenStore(
+		windows.CERT_STORE_PROV_SYSTEM,
+		0, 0,
+		windows.CERT_SYSTEM_STORE_LOCAL_MACHINE,
+		uintptr(unsafe.Pointer(storeNameUTF16)),
+	)
 	if err != nil {
-		return false, fmt.Errorf("winstore: open store %q: %w", storeName, err)
+		return false, fmt.Errorf("winstore: open store %q (Local Machine): %w", storeName, err)
 	}
 	defer windows.CertCloseStore(store, 0)
 
@@ -149,9 +210,14 @@ func RemoveCertFromStore(certPEM []byte, storeName string) error {
 		return fmt.Errorf("winstore: UTF16 store name: %w", err)
 	}
 
-	store, err := windows.CertOpenSystemStore(0, storeNameUTF16)
+	store, err := windows.CertOpenStore(
+		windows.CERT_STORE_PROV_SYSTEM,
+		0, 0,
+		windows.CERT_SYSTEM_STORE_LOCAL_MACHINE,
+		uintptr(unsafe.Pointer(storeNameUTF16)),
+	)
 	if err != nil {
-		return fmt.Errorf("winstore: open store %q: %w", storeName, err)
+		return fmt.Errorf("winstore: open store %q (Local Machine): %w", storeName, err)
 	}
 	defer windows.CertCloseStore(store, 0)
 
@@ -215,18 +281,18 @@ func RemoveCertFromStore(certPEM []byte, storeName string) error {
 }
 
 // InstallRootToStore installs a root CA certificate into the Trusted Root store.
-func InstallRootToStore(rootPEM []byte) error {
-	return InstallCertToStore(rootPEM, StoreRoot)
+func InstallRootToStore(rootPEM []byte, friendlyName string) error {
+	return InstallCertToStore(rootPEM, StoreRoot, friendlyName)
 }
 
 // InstallIntermediateToStore installs an intermediate CA cert into the CA store.
-func InstallIntermediateToStore(chainPEM []byte) error {
-	return InstallCertToStore(chainPEM, StoreCA)
+func InstallIntermediateToStore(chainPEM []byte, friendlyName string) error {
+	return InstallCertToStore(chainPEM, StoreCA, friendlyName)
 }
 
 // InstallLeafToStore installs a leaf certificate into the Personal (My) store.
-func InstallLeafToStore(certPEM []byte) error {
-	return InstallCertToStore(certPEM, StoreMy)
+func InstallLeafToStore(certPEM []byte, friendlyName string) error {
+	return InstallCertToStore(certPEM, StoreMy, friendlyName)
 }
 
 // RemoveRootFromStore removes a root CA certificate from the Trusted Root store.

@@ -6,7 +6,7 @@ package certstore
 import "github.com/GraceSolutions/StepCAAgent/internal/logging"
 
 // InstallCertToStore is a no-op on non-Windows platforms.
-func InstallCertToStore(certPEM []byte, storeName string) error {
+func InstallCertToStore(certPEM []byte, storeName, friendlyName string) error {
 	log := logging.Logger()
 	log.Info("Windows certificate store not available on this platform, skipping", "store", storeName)
 	return nil
@@ -23,17 +23,17 @@ func RemoveCertFromStore(certPEM []byte, storeName string) error {
 }
 
 // InstallRootToStore is a no-op on non-Windows platforms.
-func InstallRootToStore(rootPEM []byte) error {
+func InstallRootToStore(rootPEM []byte, friendlyName string) error {
 	return nil
 }
 
 // InstallIntermediateToStore is a no-op on non-Windows platforms.
-func InstallIntermediateToStore(chainPEM []byte) error {
+func InstallIntermediateToStore(chainPEM []byte, friendlyName string) error {
 	return nil
 }
 
 // InstallLeafToStore is a no-op on non-Windows platforms.
-func InstallLeafToStore(certPEM []byte) error {
+func InstallLeafToStore(certPEM []byte, friendlyName string) error {
 	return nil
 }
 

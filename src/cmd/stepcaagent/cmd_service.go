@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"math"
 	"math/rand"
@@ -108,7 +110,7 @@ func (a *agentService) run(ctx context.Context) {
 		if cfg.Settings.Trust.InstallRoots {
 			// Flag is ON → install root to store
 			if rootPEM, readErr := os.ReadFile(rootPath); readErr == nil {
-				if storeErr := certstore.InstallRootToStore(rootPEM); storeErr != nil {
+				if storeErr := certstore.InstallRootToStore(rootPEM, "StepCA Root CA"); storeErr != nil {
 					log.Error("store install FAILED for root CA", "store", "ROOT", "error", storeErr)
 				} else {
 					log.Info("store install SUCCESS: root CA installed to Windows Trusted Root store")
@@ -194,29 +196,12 @@ func (a *agentService) reconcile(cfg *config.Root, caClient *ca.Client, db *stat
 			log.Error("error reading next_scheduled", "provisioner", prov.Name, "error", err)
 		}
 		if !nextScheduled.IsZero() && time.Now().Before(nextScheduled) {
-			// Even if not due, verify certificate files actually exist on disk
-			paths := certstore.ResolvePaths(cfg.Settings.CertificatesDirectory(), prov.Name)
-			if !paths.CertificateExists() {
-				log.Warn("certificate files missing on disk despite DB schedule, forcing re-enrollment",
-					"provisioner", prov.Name)
-			} else if prov.InstallToStore {
-				// Also verify the cert is in the Windows store
-				certPEM, readErr := os.ReadFile(paths.Certificate)
-				if readErr == nil {
-					inStore, _ := certstore.IsCertInStore(certPEM, "MY")
-					if !inStore {
-						log.Warn("certificate missing from Windows store despite DB schedule, forcing re-enrollment",
-							"provisioner", prov.Name)
-					} else {
-						log.Info("provisioner not due yet, skipping",
-							"provisioner", prov.Name,
-							"nextScheduled", nextScheduled.UTC(),
-							"remaining", time.Until(nextScheduled))
-						continue
-					}
-				}
+			// Not due yet — but still run a health check on the actual cert
+			if reason := a.validateCertHealth(cfg, prov, db); reason != "" {
+				log.Warn("certificate health check failed, forcing re-enrollment",
+					"provisioner", prov.Name, "reason", reason)
 			} else {
-				log.Info("provisioner not due yet, skipping",
+				log.Info("provisioner not due yet, health check passed",
 					"provisioner", prov.Name,
 					"nextScheduled", nextScheduled.UTC(),
 					"remaining", time.Until(nextScheduled))
@@ -302,6 +287,68 @@ func (a *agentService) reconcile(cfg *config.Root, caClient *ca.Client, db *stat
 	}
 
 	log.Info("reconciliation cycle complete")
+}
+
+// validateCertHealth performs a deeper health check on a provisioner's certificate.
+// Returns an empty string if healthy, or a reason string if re-enrollment is needed.
+func (a *agentService) validateCertHealth(cfg *config.Root, prov config.Provisioner, db *state.DB) string {
+	log := logging.Logger()
+	paths := certstore.ResolvePaths(cfg.Settings.CertificatesDirectory(), prov.Name)
+
+	// 1. Certificate file must exist on disk
+	if !paths.CertificateExists() {
+		return "certificate file missing on disk"
+	}
+
+	// 2. Private key file must exist
+	if _, err := os.Stat(paths.PrivateKey); os.IsNotExist(err) {
+		return "private key file missing on disk"
+	}
+
+	// 3. Certificate must be parseable
+	certPEM, err := os.ReadFile(paths.Certificate)
+	if err != nil {
+		return fmt.Sprintf("cannot read certificate file: %v", err)
+	}
+	block, _ := pem.Decode(certPEM)
+	if block == nil {
+		return "certificate file contains no valid PEM block"
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return fmt.Sprintf("certificate file is corrupt: %v", err)
+	}
+
+	// 4. Certificate must not already be expired
+	if time.Now().After(cert.NotAfter) {
+		return fmt.Sprintf("certificate already expired at %s", cert.NotAfter.UTC().Format(time.RFC3339))
+	}
+
+	// 5. Cross-check serial against DB record
+	certRec, _ := db.GetCertificate(prov.Name)
+	if certRec != nil && certRec.Serial != cert.SerialNumber.String() {
+		log.Warn("certificate serial mismatch between disk and DB",
+			"provisioner", prov.Name,
+			"diskSerial", cert.SerialNumber.String(),
+			"dbSerial", certRec.Serial)
+		return "certificate serial mismatch between disk and database"
+	}
+
+	// 6. If installToStore is enabled, verify cert is in the Windows store
+	if prov.InstallToStore {
+		inStore, _ := certstore.IsCertInStore(certPEM, "MY")
+		if !inStore {
+			return "certificate missing from Windows certificate store"
+		}
+	}
+
+	log.Debug("certificate health check passed",
+		"provisioner", prov.Name,
+		"subject", cert.Subject.CommonName,
+		"serial", cert.SerialNumber,
+		"notAfter", cert.NotAfter.UTC().Format(time.RFC3339))
+
+	return ""
 }
 
 // calculateBackoff computes exponential backoff with jitter.

@@ -203,12 +203,10 @@ func (c *Context) ResolveIPAddresses(raw []string) []string {
 	return result
 }
 
-// ResolveCommonName resolves commonName, expanding "auto" to hostname.
+// ResolveCommonName resolves commonName, expanding "auto" to the short
+// hostname (not FQDN). FQDNs belong in dnsNames SANs only.
 func (c *Context) ResolveCommonName(raw string) string {
 	if strings.EqualFold(strings.TrimSpace(raw), "auto") {
-		if c.FQDN != "" {
-			return c.FQDN
-		}
 		return c.Hostname
 	}
 	return c.ExpandString(raw)

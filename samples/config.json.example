@@ -13,10 +13,7 @@
         {
             "name": "workstation-identity",
             "enabled": true,
-            "issuer": {
-                "mode": "step-ca",
-                "provisioner": "device-identity"
-            },
+            "caProvisioner": "device-identity",
             "subject": {
                 "commonName": "auto",
                 "dnsNames": ["auto"],
@@ -30,10 +27,7 @@
         {
             "name": "web-api-tls",
             "enabled": true,
-            "issuer": {
-                "mode": "step-ca",
-                "provisioner": "svc-web"
-            },
+            "caProvisioner": "svc-web",
             "subject": {
                 "commonName": "auto",
                 "dnsNames": ["auto"],
