@@ -78,6 +78,25 @@ func (c *Client) RenewCertificate(prov config.Provisioner, db *state.DB) error {
 		}
 	}
 
+	// Install into Windows Certificate Store if enabled
+	if prov.InstallToStore {
+		log.Info("installing renewed certificate into Windows store", "provisioner", prov.Name)
+		if err := certstore.InstallLeafToStore(certPEM); err != nil {
+			log.Error("failed to install renewed leaf cert to store", "provisioner", prov.Name, "error", err)
+		}
+		if len(chainPEM) > 0 {
+			if err := certstore.InstallIntermediateToStore(chainPEM); err != nil {
+				log.Error("failed to install intermediate to store", "provisioner", prov.Name, "error", err)
+			}
+		}
+		rootPath := certstore.RootCAPath(c.CertsDir)
+		if rootPEM, err := os.ReadFile(rootPath); err == nil {
+			if err := certstore.InstallRootToStore(rootPEM); err != nil {
+				log.Error("failed to install root CA to store", "provisioner", prov.Name, "error", err)
+			}
+		}
+	}
+
 	// Update state database
 	if db != nil {
 		renewed := signResp.ServerPEM.Certificate

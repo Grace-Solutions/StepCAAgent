@@ -124,7 +124,7 @@ func (c *Client) EnrollCertificate(prov config.Provisioner, db *state.DB) error 
 		})
 	}
 
-	// 7. Store certificate and key files
+	// 7. Store certificate and key files on disk
 	paths := certstore.ResolvePaths(c.CertsDir, prov.Name)
 
 	if err := paths.EnsureDir(); err != nil {
@@ -139,6 +139,26 @@ func (c *Client) EnrollCertificate(prov config.Provisioner, db *state.DB) error 
 	if len(chainPEM) > 0 {
 		if err := paths.WriteChain(chainPEM); err != nil {
 			return err
+		}
+	}
+
+	// 7b. Install into Windows Certificate Store if enabled
+	if prov.InstallToStore {
+		log.Info("installing certificate into Windows store", "provisioner", prov.Name)
+		if err := certstore.InstallLeafToStore(certPEM); err != nil {
+			log.Error("failed to install leaf cert to store", "provisioner", prov.Name, "error", err)
+		}
+		if len(chainPEM) > 0 {
+			if err := certstore.InstallIntermediateToStore(chainPEM); err != nil {
+				log.Error("failed to install intermediate to store", "provisioner", prov.Name, "error", err)
+			}
+		}
+		// Install root CA into Trusted Root store
+		rootPath := certstore.RootCAPath(c.CertsDir)
+		if rootPEM, err := os.ReadFile(rootPath); err == nil {
+			if err := certstore.InstallRootToStore(rootPEM); err != nil {
+				log.Error("failed to install root CA to store", "provisioner", prov.Name, "error", err)
+			}
 		}
 	}
 

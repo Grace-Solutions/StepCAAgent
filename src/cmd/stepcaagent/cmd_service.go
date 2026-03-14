@@ -100,6 +100,18 @@ func (a *agentService) run(ctx context.Context) {
 		// Continue — may already have a valid root
 	} else {
 		log.Info("CA root trust established")
+
+		// Install root CA into Windows Trusted Root store if configured
+		if cfg.Settings.Trust.InstallRoots {
+			rootPath := certstore.RootCAPath(cfg.Settings.CertificatesDirectory())
+			if rootPEM, readErr := os.ReadFile(rootPath); readErr == nil {
+				if storeErr := certstore.InstallRootToStore(rootPEM); storeErr != nil {
+					log.Error("failed to install root CA to Windows store", "error", storeErr)
+				} else {
+					log.Info("root CA installed to Windows Trusted Root store")
+				}
+			}
+		}
 	}
 	_ = db.UpdateCAStatus(true, "")
 
@@ -172,6 +184,22 @@ func (a *agentService) reconcile(cfg *config.Root, caClient *ca.Client, db *stat
 			if !paths.CertificateExists() {
 				log.Warn("certificate files missing on disk despite DB schedule, forcing re-enrollment",
 					"provisioner", prov.Name)
+			} else if prov.InstallToStore {
+				// Also verify the cert is in the Windows store
+				certPEM, readErr := os.ReadFile(paths.Certificate)
+				if readErr == nil {
+					inStore, _ := certstore.IsCertInStore(certPEM, "MY")
+					if !inStore {
+						log.Warn("certificate missing from Windows store despite DB schedule, forcing re-enrollment",
+							"provisioner", prov.Name)
+					} else {
+						log.Info("provisioner not due yet, skipping",
+							"provisioner", prov.Name,
+							"nextScheduled", nextScheduled.UTC(),
+							"remaining", time.Until(nextScheduled))
+						continue
+					}
+				}
 			} else {
 				log.Info("provisioner not due yet, skipping",
 					"provisioner", prov.Name,

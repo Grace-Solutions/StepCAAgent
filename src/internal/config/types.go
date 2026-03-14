@@ -76,16 +76,17 @@ type Trust struct {
 
 // Provisioner defines a single managed certificate.
 type Provisioner struct {
-	Name         string        `json:"name"`
-	Enabled      bool          `json:"enabled"`
-	Issuer       Issuer        `json:"issuer"`
-	Subject      Subject       `json:"subject"`
-	Key          Key           `json:"key"`
-	Renewal      Renewal       `json:"renewal"`
-	Storage      Storage       `json:"storage"`
-	Auth         Auth          `json:"auth"`
-	TrustBinding TrustBinding  `json:"trustBinding"`
-	Hooks        Hooks         `json:"-"` // retained for future use; not exposed in config (security: arbitrary command execution)
+	Name           string       `json:"name"`
+	Enabled        bool         `json:"enabled"`
+	InstallToStore bool         `json:"installToStore"` // if true, import cert into Windows Certificate Store
+	Issuer         Issuer       `json:"issuer"`
+	Subject        Subject      `json:"subject"`
+	Key            Key          `json:"key"`
+	Renewal        Renewal      `json:"renewal"`
+	Storage        Storage      `json:"storage"`
+	Auth           Auth         `json:"auth"`
+	TrustBinding   TrustBinding `json:"trustBinding"`
+	Hooks          Hooks        `json:"-"` // retained for future use; not exposed in config (security: arbitrary command execution)
 }
 
 // Issuer describes how to issue the certificate.

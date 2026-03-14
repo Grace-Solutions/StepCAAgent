@@ -234,13 +234,16 @@ func GenerateSample() ([]byte, error) {
 }
 
 
-// LoadFromURL downloads config from a URL with optional authentication,
-// stores it to a local file with restrictive permissions, and loads it.
+// LoadFromURL downloads config from a URL and parses it entirely in memory.
+// The URL can point to a static .json file, a webhook, or any API endpoint —
+// as long as the response body is valid JSON configuration.
+// The config is never written to disk; it lives in memory for the lifetime
+// of the process. The destPath parameter is ignored (kept for API compat).
 // The header and token parameters are optional; when provided, the request
 // includes an HTTP header of the form "Header: Token".
 func LoadFromURL(url, header, token, destPath string) (*Root, error) {
 	log := logging.Logger()
-	log.Info("fetching remote configuration", "url", url)
+	log.Info("fetching remote configuration (in-memory)", "url", url)
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -267,30 +270,28 @@ func LoadFromURL(url, header, token, destPath string) (*Root, error) {
 	if err != nil {
 		return nil, fmt.Errorf("config: read response body: %w", err)
 	}
-	log.Info("remote config downloaded", "bytes", len(body))
+	log.Info("remote config downloaded (held in memory)", "bytes", len(body))
 
-	// Determine destination path
-	if destPath == "" {
-		exe, err := os.Executable()
-		if err != nil {
-			return nil, fmt.Errorf("config: determine executable path: %w", err)
-		}
-		destPath = filepath.Join(filepath.Dir(exe), "stepcaagent.json")
+	// Parse JSON directly in memory — no disk write
+	var cfg Root
+	if err := json.Unmarshal(body, &cfg); err != nil {
+		return nil, fmt.Errorf("config: parse remote JSON: %w", err)
 	}
 
-	// Write config to file with restrictive permissions
-	dir := filepath.Dir(destPath)
-	if err := os.MkdirAll(dir, 0700); err != nil {
-		return nil, fmt.Errorf("config: create directory %s: %w", dir, err)
+	if err := cfg.applyDefaults(); err != nil {
+		return nil, fmt.Errorf("config: defaults: %w", err)
 	}
 
-	if err := os.WriteFile(destPath, body, 0600); err != nil {
-		return nil, fmt.Errorf("config: write %s: %w", destPath, err)
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("config: validate: %w", err)
 	}
-	_ = permissions.EnforceRestrictive(destPath)
-	log.Info("remote config stored", "path", destPath)
 
-	return LoadFromFile(destPath)
+	if err := cfg.ResolveVariables(); err != nil {
+		log.Warn("config: variable resolution had issues", "error", err)
+	}
+
+	log.Info("remote config loaded (in-memory)", "url", url, "provisioners", len(cfg.Provisioners))
+	return &cfg, nil
 }
 
 func boolPtr(b bool) *bool { return &b }
