@@ -24,6 +24,7 @@ func runOnceCommand() *cli.Command {
 			&cli.StringFlag{Name: "config-url", Usage: "URL to download config from"},
 			&cli.StringFlag{Name: "config-header", Usage: "HTTP header name for auth"},
 			&cli.StringFlag{Name: "config-token", Usage: "HTTP header value for auth"},
+			&cli.StringFlag{Name: "config-method", Usage: "HTTP method: GET (default) or POST (webhook)", Value: "GET"},
 		},
 		Action: runOnceAction,
 	}
@@ -85,6 +86,7 @@ func loadConfigFromContext(c *cli.Context) (*config.Root, error) {
 	if configURL != "" {
 		header := c.String("config-header")
 		token := c.String("config-token")
+		method := c.String("config-method")
 		if header == "" {
 			if v, ok := c.App.Metadata["configHeader"].(string); ok {
 				header = v
@@ -95,9 +97,14 @@ func loadConfigFromContext(c *cli.Context) (*config.Root, error) {
 				token = v
 			}
 		}
+		if method == "" {
+			if v, ok := c.App.Metadata["configMethod"].(string); ok {
+				method = v
+			}
+		}
 
 		destPath := c.String("config")
-		return config.LoadFromURL(configURL, header, token, destPath)
+		return config.LoadFromURL(configURL, method, header, token, destPath)
 	}
 
 	// Fall back to file-based config

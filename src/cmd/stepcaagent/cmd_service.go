@@ -29,6 +29,7 @@ type agentService struct {
 	configURL    string
 	configHeader string
 	configToken  string
+	configMethod string // "GET" (default) or "POST" (webhook mode)
 	cancel       context.CancelFunc
 }
 
@@ -48,8 +49,8 @@ func (a *agentService) run(ctx context.Context) {
 	var err error
 
 	if a.configURL != "" {
-		log.Info("loading configuration from URL", "url", a.configURL)
-		cfg, err = config.LoadFromURL(a.configURL, a.configHeader, a.configToken, a.configPath)
+		log.Info("loading configuration from URL", "url", a.configURL, "method", a.configMethod)
+		cfg, err = config.LoadFromURL(a.configURL, a.configMethod, a.configHeader, a.configToken, a.configPath)
 	} else {
 		cfgPath := a.configPath
 		if cfgPath == "" {

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/GraceSolutions/StepCAAgent/internal/discovery"
 	"github.com/GraceSolutions/StepCAAgent/internal/logging"
 	"github.com/GraceSolutions/StepCAAgent/internal/permissions"
 	"github.com/GraceSolutions/StepCAAgent/internal/vars"
@@ -234,20 +236,60 @@ func GenerateSample() ([]byte, error) {
 }
 
 
+// webhookPayload is the JSON body sent in POST (webhook) mode.
+// It contains auto-detected device identifiers so the server can
+// build a device-specific configuration.
+type webhookPayload struct {
+	CN   string   `json:"cn"`
+	SANs []string `json:"sans"`
+}
+
 // LoadFromURL downloads config from a URL and parses it entirely in memory.
 // The URL can point to a static .json file, a webhook, or any API endpoint —
 // as long as the response body is valid JSON configuration.
 // The config is never written to disk; it lives in memory for the lifetime
 // of the process. The destPath parameter is ignored (kept for API compat).
+//
+// method controls the HTTP method: "GET" (default) performs a simple fetch;
+// "POST" enables webhook mode — the agent auto-discovers the device's hostname
+// and SANs and sends them as a JSON body so the server can return a
+// device-specific configuration.
+//
 // The header and token parameters are optional; when provided, the request
 // includes an HTTP header of the form "Header: Token".
-func LoadFromURL(url, header, token, destPath string) (*Root, error) {
+func LoadFromURL(url, method, header, token, destPath string) (*Root, error) {
 	log := logging.Logger()
-	log.Info("fetching remote configuration (in-memory)", "url", url)
 
-	req, err := http.NewRequest("GET", url, nil)
+	// Normalise and default
+	method = strings.ToUpper(strings.TrimSpace(method))
+	if method == "" {
+		method = "GET"
+	}
+
+	log.Info("fetching remote configuration (in-memory)", "url", url, "method", method)
+
+	var reqBody io.Reader
+	if method == "POST" {
+		payload, err := buildWebhookPayload()
+		if err != nil {
+			return nil, fmt.Errorf("config: build webhook payload: %w", err)
+		}
+		jsonBytes, err := json.Marshal(payload)
+		if err != nil {
+			return nil, fmt.Errorf("config: marshal webhook payload: %w", err)
+		}
+		log.Info("webhook mode: sending device identifiers",
+			"cn", payload.CN,
+			"sans", len(payload.SANs))
+		reqBody = bytes.NewReader(jsonBytes)
+	}
+
+	req, err := http.NewRequest(method, url, reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("config: create request: %w", err)
+	}
+	if method == "POST" {
+		req.Header.Set("Content-Type", "application/json")
 	}
 
 	if header != "" && token != "" {
@@ -292,6 +334,31 @@ func LoadFromURL(url, header, token, destPath string) (*Root, error) {
 
 	log.Info("remote config loaded (in-memory)", "url", url, "provisioners", len(cfg.Provisioners))
 	return &cfg, nil
+}
+
+// buildWebhookPayload uses discovery to detect the device's hostname and SANs.
+func buildWebhookPayload() (*webhookPayload, error) {
+	result, err := discovery.Detect()
+	if err != nil {
+		return nil, fmt.Errorf("auto-discovery for webhook: %w", err)
+	}
+
+	// CN = short hostname (consistent with auto-resolved CN in config)
+	cn := result.Hostname
+	if idx := strings.IndexByte(cn, '.'); idx >= 0 {
+		cn = cn[:idx]
+	}
+	cn = strings.ToLower(cn)
+
+	// SANs = all discovered DNS names + IP addresses
+	var sans []string
+	sans = append(sans, result.DNSNames...)
+	sans = append(sans, result.IPAddresses...)
+
+	return &webhookPayload{
+		CN:   cn,
+		SANs: sans,
+	}, nil
 }
 
 func boolPtr(b bool) *bool { return &b }

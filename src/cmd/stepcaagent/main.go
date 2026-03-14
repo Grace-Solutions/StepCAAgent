@@ -39,12 +39,19 @@ func main() {
 				Usage:   "HTTP header value/token for authenticated config download",
 				EnvVars: []string{"STEPCAAGENT_CONFIG_TOKEN"},
 			},
+			&cli.StringFlag{
+				Name:    "config-method",
+				Usage:   "HTTP method for config-url: GET (default) or POST (webhook mode with device identifiers)",
+				Value:   "GET",
+				EnvVars: []string{"STEPCAAGENT_CONFIG_METHOD"},
+			},
 		},
 		Before: func(c *cli.Context) error {
 			c.App.Metadata["configPath"] = c.String("config")
 			c.App.Metadata["configURL"] = c.String("config-url")
 			c.App.Metadata["configHeader"] = c.String("config-header")
 			c.App.Metadata["configToken"] = c.String("config-token")
+			c.App.Metadata["configMethod"] = c.String("config-method")
 			return nil
 		},
 		Commands: []*cli.Command{
