@@ -20,15 +20,15 @@ import (
 // via the Smallstep SDK's Renew method.
 func (c *Client) RenewCertificate(prov config.Provisioner, db *state.DB) error {
 	log := logging.Logger()
-	log.Info("renewing certificate (SDK)", "provisioner", prov.Name)
+	log.Info("renewing certificate (SDK)", "provisioner", prov.ProvisionerName)
 
-	paths := certstore.ResolvePaths(c.CertsDir, prov.Name)
+	paths := certstore.ResolvePaths(c.CertsDir, prov.ProvisionerName)
 
 	// Load existing cert and key for mTLS
 	tlsCert, err := tls.LoadX509KeyPair(paths.Certificate, paths.PrivateKey)
 	if err != nil {
 		log.Error("could not load existing cert/key for renewal",
-			"provisioner", prov.Name,
+			"provisioner", prov.ProvisionerName,
 			"certPath", paths.Certificate,
 			"keyPath", paths.PrivateKey,
 			"error", err)
@@ -46,13 +46,13 @@ func (c *Client) RenewCertificate(prov config.Provisioner, db *state.DB) error {
 
 	signResp, err := c.SDK.Renew(tr)
 	if err != nil {
-		log.Error("SDK renewal failed", "provisioner", prov.Name, "error", err)
+		log.Error("SDK renewal failed", "provisioner", prov.ProvisionerName, "error", err)
 		if db != nil {
-			_ = db.RecordAuditEvent("renew_failed", prov.Name, fmt.Sprintf("SDK renew: %v", err), "error")
+			_ = db.RecordAuditEvent("renew_failed", prov.ProvisionerName, fmt.Sprintf("SDK renew: %v", err), "error")
 		}
-		return fmt.Errorf("renew certificate for %s: %w", prov.Name, err)
+		return fmt.Errorf("renew certificate for %s: %w", prov.ProvisionerName, err)
 	}
-	log.Info("certificate renewed by CA", "provisioner", prov.Name)
+	log.Info("certificate renewed by CA", "provisioner", prov.ProvisionerName)
 
 	// Extract PEM from the SDK response
 	certPEM := pem.EncodeToMemory(&pem.Block{
@@ -86,25 +86,25 @@ func (c *Client) RenewCertificate(prov config.Provisioner, db *state.DB) error {
 		friendlyRoot := "StepCA Root CA"
 
 		log.Info("store install requested, importing renewed certificate into certificate store",
-			"provisioner", prov.Name,
+			"provisioner", prov.ProvisionerName,
 			"friendlyName", friendlyLeaf)
 
 		if err := certstore.InstallLeafToStore(certPEM, friendlyLeaf); err != nil {
 			log.Error("store install FAILED for renewed leaf certificate",
-				"provisioner", prov.Name, "store", "MY", "error", err)
+				"provisioner", prov.ProvisionerName, "store", "MY", "error", err)
 		} else {
 			log.Info("store install SUCCESS: renewed leaf certificate installed",
-				"provisioner", prov.Name, "store", "MY", "friendlyName", friendlyLeaf)
+				"provisioner", prov.ProvisionerName, "store", "MY", "friendlyName", friendlyLeaf)
 			storeInstalled = true
 		}
 
 		if len(chainPEM) > 0 {
 			if err := certstore.InstallIntermediateToStore(chainPEM, friendlyIntermediate); err != nil {
 				log.Error("store install FAILED for intermediate certificate",
-					"provisioner", prov.Name, "store", "CA", "error", err)
+					"provisioner", prov.ProvisionerName, "store", "CA", "error", err)
 			} else {
 				log.Info("store install SUCCESS: intermediate certificate installed",
-					"provisioner", prov.Name, "store", "CA")
+					"provisioner", prov.ProvisionerName, "store", "CA")
 			}
 		}
 
@@ -112,10 +112,10 @@ func (c *Client) RenewCertificate(prov config.Provisioner, db *state.DB) error {
 		if rootPEM, err := os.ReadFile(rootPath); err == nil {
 			if err := certstore.InstallRootToStore(rootPEM, friendlyRoot); err != nil {
 				log.Error("store install FAILED for root CA",
-					"provisioner", prov.Name, "store", "ROOT", "error", err)
+					"provisioner", prov.ProvisionerName, "store", "ROOT", "error", err)
 			} else {
 				log.Info("store install SUCCESS: root CA installed",
-					"provisioner", prov.Name, "store", "ROOT")
+					"provisioner", prov.ProvisionerName, "store", "ROOT")
 			}
 		}
 	}
@@ -125,7 +125,7 @@ func (c *Client) RenewCertificate(prov config.Provisioner, db *state.DB) error {
 		renewed := signResp.ServerPEM.Certificate
 		if renewed != nil {
 			_ = db.UpsertCertificate(state.CertRecord{
-				Name:             prov.Name,
+				Name:             prov.ProvisionerName,
 				Serial:           renewed.SerialNumber.String(),
 				Subject:          renewed.Subject.CommonName,
 				Issuer:           renewed.Issuer.CommonName,
@@ -136,11 +136,11 @@ func (c *Client) RenewCertificate(prov config.Provisioner, db *state.DB) error {
 				InstalledToStore: storeInstalled,
 			})
 		}
-		_ = db.RecordAuditEvent("renewed", prov.Name, "certificate renewed successfully", "success")
+		_ = db.RecordAuditEvent("renewed", prov.ProvisionerName, "certificate renewed successfully", "success")
 	}
 
 	log.Info("certificate renewal complete",
-		"provisioner", prov.Name,
+		"provisioner", prov.ProvisionerName,
 		"installedToStore", storeInstalled)
 	return nil
 }
@@ -150,11 +150,11 @@ func (c *Client) RenewCertificate(prov config.Provisioner, db *state.DB) error {
 // Returns whether renewal is needed and the calculated next renewal time.
 func NeedsRenewal(certsDir string, prov config.Provisioner) (bool, time.Time, error) {
 	log := logging.Logger()
-	paths := certstore.ResolvePaths(certsDir, prov.Name)
+	paths := certstore.ResolvePaths(certsDir, prov.ProvisionerName)
 
 	certData, err := os.ReadFile(paths.Certificate)
 	if err != nil {
-		log.Info("no existing certificate found, needs enrollment", "provisioner", prov.Name)
+		log.Info("no existing certificate found, needs enrollment", "provisioner", prov.ProvisionerName)
 		return true, time.Time{}, nil
 	}
 
@@ -173,7 +173,7 @@ func NeedsRenewal(certsDir string, prov config.Provisioner) (bool, time.Time, er
 	needs := now.After(renewAt) || now.Equal(renewAt)
 
 	log.Info("certificate renewal check",
-		"provisioner", prov.Name,
+		"provisioner", prov.ProvisionerName,
 		"notBefore", cert.NotBefore.UTC(),
 		"notAfter", cert.NotAfter.UTC(),
 		"renewAt", renewAt.UTC(),

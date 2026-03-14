@@ -169,7 +169,7 @@ func (a *agentService) reconcile(cfg *config.Root, caClient *ca.Client, db *stat
 	// Build set of active provisioner names for stale cert detection
 	activeNames := make(map[string]bool)
 	for _, prov := range cfg.Provisioners {
-		activeNames[prov.Name] = true
+		activeNames[prov.ProvisionerName] = true
 	}
 
 	// Clean up certs for provisioners no longer in config
@@ -177,99 +177,99 @@ func (a *agentService) reconcile(cfg *config.Root, caClient *ca.Client, db *stat
 
 	for _, prov := range cfg.Provisioners {
 		if !prov.Enabled {
-			log.Info("provisioner disabled, skipping", "name", prov.Name)
+			log.Info("provisioner disabled, skipping", "name", prov.ProvisionerName)
 			continue
 		}
 
 		// Check retry count — halt after maxRetries until service restart
-		retryCount, _ := db.GetRetryCount(prov.Name)
+		retryCount, _ := db.GetRetryCount(prov.ProvisionerName)
 		if retryCount >= maxRetries {
 			log.Error("provisioner halted after max retries, restart service to retry",
-				"provisioner", prov.Name,
+				"provisioner", prov.ProvisionerName,
 				"retryCount", retryCount,
 				"maxRetries", maxRetries)
 			continue
 		}
 
 		// Check if this provisioner is due for processing
-		nextScheduled, err := db.GetNextScheduled(prov.Name)
+		nextScheduled, err := db.GetNextScheduled(prov.ProvisionerName)
 		if err != nil {
-			log.Error("error reading next_scheduled", "provisioner", prov.Name, "error", err)
+			log.Error("error reading next_scheduled", "provisioner", prov.ProvisionerName, "error", err)
 		}
 		if !nextScheduled.IsZero() && time.Now().Before(nextScheduled) {
 			// Not due yet — but still run a health check on the actual cert
 			if reason := a.validateCertHealth(cfg, prov, db); reason != "" {
 				log.Warn("certificate health check failed, forcing re-enrollment",
-					"provisioner", prov.Name, "reason", reason)
+					"provisioner", prov.ProvisionerName, "reason", reason)
 			} else {
 				log.Info("provisioner not due yet, health check passed",
-					"provisioner", prov.Name,
+					"provisioner", prov.ProvisionerName,
 					"nextScheduled", nextScheduled.UTC(),
 					"remaining", time.Until(nextScheduled))
 				continue
 			}
 		}
 
-		log.Info("processing provisioner", "name", prov.Name)
+		log.Info("processing provisioner", "name", prov.ProvisionerName)
 
 		// Detect installToStore flag transition: true → false means remove from store
-		certRec, _ := db.GetCertificate(prov.Name)
+		certRec, _ := db.GetCertificate(prov.ProvisionerName)
 		if certRec != nil && certRec.InstalledToStore && !prov.InstallToStore {
 			log.Info("installToStore changed to false, removing certificate from Windows store",
-				"provisioner", prov.Name)
-			paths := certstore.ResolvePaths(cfg.Settings.CertificatesDirectory(), prov.Name)
+				"provisioner", prov.ProvisionerName)
+			paths := certstore.ResolvePaths(cfg.Settings.CertificatesDirectory(), prov.ProvisionerName)
 			if leafPEM, readErr := os.ReadFile(paths.Certificate); readErr == nil {
 				if rmErr := certstore.RemoveLeafFromStore(leafPEM); rmErr != nil {
 					log.Error("store remove FAILED for leaf certificate",
-						"provisioner", prov.Name, "store", "MY", "error", rmErr)
+						"provisioner", prov.ProvisionerName, "store", "MY", "error", rmErr)
 				} else {
 					log.Info("store remove SUCCESS: leaf certificate removed",
-						"provisioner", prov.Name, "store", "MY")
+						"provisioner", prov.ProvisionerName, "store", "MY")
 				}
 			}
 			if chainPEM, readErr := os.ReadFile(paths.Chain); readErr == nil && len(chainPEM) > 0 {
 				if rmErr := certstore.RemoveIntermediateFromStore(chainPEM); rmErr != nil {
 					log.Error("store remove FAILED for intermediate certificate",
-						"provisioner", prov.Name, "store", "CA", "error", rmErr)
+						"provisioner", prov.ProvisionerName, "store", "CA", "error", rmErr)
 				} else {
 					log.Info("store remove SUCCESS: intermediate certificate removed",
-						"provisioner", prov.Name, "store", "CA")
+						"provisioner", prov.ProvisionerName, "store", "CA")
 				}
 			}
-			_ = db.SetInstalledToStore(prov.Name, false)
+			_ = db.SetInstalledToStore(prov.ProvisionerName, false)
 		}
 
 		needs, renewAt, err := ca.NeedsRenewal(cfg.Settings.CertificatesDirectory(), prov)
 		if err != nil {
-			log.Error("error checking renewal status", "provisioner", prov.Name, "error", err)
+			log.Error("error checking renewal status", "provisioner", prov.ProvisionerName, "error", err)
 			needs = true
 		}
 
 		if !needs {
 			log.Info("certificate is current, no action needed",
-				"provisioner", prov.Name,
+				"provisioner", prov.ProvisionerName,
 				"nextRenewalAt", renewAt.UTC())
-			_ = db.UpdateRenewalTracking(prov.Name, true, renewAt, "")
+			_ = db.UpdateRenewalTracking(prov.ProvisionerName, true, renewAt, "")
 			continue
 		}
 
 		// Try renewal first (if cert exists), fall back to enrollment
-		log.Info("certificate needs renewal/enrollment", "provisioner", prov.Name)
+		log.Info("certificate needs renewal/enrollment", "provisioner", prov.ProvisionerName)
 
 		err = caClient.RenewCertificate(prov, db)
 		if err != nil {
-			log.Warn("renewal failed, attempting fresh enrollment", "provisioner", prov.Name, "error", err)
+			log.Warn("renewal failed, attempting fresh enrollment", "provisioner", prov.ProvisionerName, "error", err)
 			if enrollErr := caClient.EnrollCertificate(prov, db); enrollErr != nil {
 				// Calculate backoff with jitter
 				backoff := calculateBackoff(prov.Renewal.Backoff, retryCount)
 				nextRetry := time.Now().Add(backoff)
 				log.Error("enrollment also failed, scheduling retry with backoff",
-					"provisioner", prov.Name,
+					"provisioner", prov.ProvisionerName,
 					"error", enrollErr,
 					"retryCount", retryCount+1,
 					"backoff", backoff,
 					"nextRetry", nextRetry.UTC())
-				_ = db.UpdateRenewalTracking(prov.Name, false, nextRetry, enrollErr.Error())
+				_ = db.UpdateRenewalTracking(prov.ProvisionerName, false, nextRetry, enrollErr.Error())
 				continue
 			}
 		}
@@ -281,10 +281,10 @@ func (a *agentService) reconcile(cfg *config.Root, caClient *ca.Client, db *stat
 		}
 
 		log.Info("provisioner certificate updated successfully",
-			"provisioner", prov.Name,
+			"provisioner", prov.ProvisionerName,
 			"nextRenewalAt", nextRenewAt.UTC(),
 			"sleepUntil", time.Until(nextRenewAt))
-		_ = db.UpdateRenewalTracking(prov.Name, true, nextRenewAt, "")
+		_ = db.UpdateRenewalTracking(prov.ProvisionerName, true, nextRenewAt, "")
 	}
 
 	log.Info("reconciliation cycle complete")
@@ -294,7 +294,7 @@ func (a *agentService) reconcile(cfg *config.Root, caClient *ca.Client, db *stat
 // Returns an empty string if healthy, or a reason string if re-enrollment is needed.
 func (a *agentService) validateCertHealth(cfg *config.Root, prov config.Provisioner, db *state.DB) string {
 	log := logging.Logger()
-	paths := certstore.ResolvePaths(cfg.Settings.CertificatesDirectory(), prov.Name)
+	paths := certstore.ResolvePaths(cfg.Settings.CertificatesDirectory(), prov.ProvisionerName)
 
 	// 1. Certificate file must exist on disk
 	if !paths.CertificateExists() {
@@ -326,10 +326,10 @@ func (a *agentService) validateCertHealth(cfg *config.Root, prov config.Provisio
 	}
 
 	// 5. Cross-check serial against DB record
-	certRec, _ := db.GetCertificate(prov.Name)
+	certRec, _ := db.GetCertificate(prov.ProvisionerName)
 	if certRec != nil && certRec.Serial != cert.SerialNumber.String() {
 		log.Warn("certificate serial mismatch between disk and DB",
-			"provisioner", prov.Name,
+			"provisioner", prov.ProvisionerName,
 			"diskSerial", cert.SerialNumber.String(),
 			"dbSerial", certRec.Serial)
 		return "certificate serial mismatch between disk and database"
@@ -344,7 +344,7 @@ func (a *agentService) validateCertHealth(cfg *config.Root, prov config.Provisio
 	}
 
 	log.Debug("certificate health check passed",
-		"provisioner", prov.Name,
+		"provisioner", prov.ProvisionerName,
 		"subject", cert.Subject.CommonName,
 		"serial", cert.SerialNumber,
 		"notAfter", cert.NotAfter.UTC().Format(time.RFC3339))

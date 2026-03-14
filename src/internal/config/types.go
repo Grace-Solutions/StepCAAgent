@@ -79,35 +79,25 @@ type Trust struct {
 
 // Provisioner defines a single managed certificate.
 type Provisioner struct {
-	Name           string       `json:"name"`
-	Enabled        bool         `json:"enabled"`
-	InstallToStore bool         `json:"installToStore"`          // if true, import cert into platform certificate store
-	Store          string       `json:"store,omitempty"`         // store scope: "localmachine" (default), "currentuser", "both", or "auto"
-	CAProvisioner  string       `json:"caProvisioner,omitempty"` // provisioner name on the CA; defaults to Name if empty
-	FriendlyName   string       `json:"friendlyName,omitempty"`  // display name in cert store; "auto" (default) = "StepCA - <name>"
-	Subject        Subject      `json:"subject"`
-	Key            Key          `json:"key"`
-	Renewal        Renewal      `json:"renewal"`
-	Storage        Storage      `json:"storage"`
-	Auth           Auth         `json:"auth"`
-	TrustBinding   TrustBinding `json:"trustBinding"`
-	Hooks          Hooks        `json:"-"` // retained for future use; not exposed in config (security: arbitrary command execution)
-}
-
-// CAProvisionerName returns the provisioner name to use on the CA.
-// If CAProvisioner is set, it takes precedence over Name.
-func (p Provisioner) CAProvisionerName() string {
-	if p.CAProvisioner != "" {
-		return p.CAProvisioner
-	}
-	return p.Name
+	ProvisionerName string       `json:"provisionerName"`        // provisioner name on the CA — also used as local identifier
+	Enabled         bool         `json:"enabled"`
+	InstallToStore  bool         `json:"installToStore"`          // if true, import cert into platform certificate store
+	Store           string       `json:"store,omitempty"`         // store scope: "localmachine" (default), "currentuser", "both", or "auto"
+	FriendlyName    string       `json:"friendlyName,omitempty"`  // display name in cert store; "auto" (default) = "StepCA - <provisionerName>"
+	Subject         Subject      `json:"subject"`
+	Key             Key          `json:"key"`
+	Renewal         Renewal      `json:"renewal"`
+	Storage         Storage      `json:"storage"`
+	Auth            Auth         `json:"auth"`
+	TrustBinding    TrustBinding `json:"trustBinding"`
+	Hooks           Hooks        `json:"-"` // retained for future use; not exposed in config (security: arbitrary command execution)
 }
 
 // ResolvedFriendlyName returns the friendly name to use in the certificate store.
-// If FriendlyName is empty or "auto", returns "StepCA - <name>".
+// If FriendlyName is empty or "auto", returns "StepCA - <provisionerName>".
 func (p Provisioner) ResolvedFriendlyName() string {
 	if p.FriendlyName == "" || p.FriendlyName == "auto" {
-		return fmt.Sprintf("StepCA - %s", p.Name)
+		return fmt.Sprintf("StepCA - %s", p.ProvisionerName)
 	}
 	return p.FriendlyName
 }

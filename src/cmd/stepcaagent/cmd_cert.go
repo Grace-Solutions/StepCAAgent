@@ -83,7 +83,7 @@ func resolveConfigPath(c *cli.Context) string {
 
 func findProvisioner(cfg *config.Root, name string) (*config.Provisioner, error) {
 	for i := range cfg.Provisioners {
-		if cfg.Provisioners[i].Name == name {
+		if cfg.Provisioners[i].ProvisionerName == name {
 			return &cfg.Provisioners[i], nil
 		}
 	}
@@ -121,7 +121,7 @@ func certRequestAction(c *cli.Context) error {
 		return fmt.Errorf("enroll certificate: %w", err)
 	}
 
-	fmt.Printf("Certificate enrolled successfully for provisioner %q.\n", prov.Name)
+	fmt.Printf("Certificate enrolled successfully for provisioner %q.\n", prov.ProvisionerName)
 	return nil
 }
 
@@ -152,7 +152,7 @@ func certRenewAction(c *cli.Context) error {
 			if !prov.Enabled {
 				continue
 			}
-			fmt.Printf("Renewing %q...\n", prov.Name)
+			fmt.Printf("Renewing %q...\n", prov.ProvisionerName)
 			if err := client.RenewCertificate(prov, db); err != nil {
 				fmt.Fprintf(os.Stderr, "  Error: %v\n", err)
 			} else {
@@ -176,7 +176,7 @@ func certRenewAction(c *cli.Context) error {
 		return fmt.Errorf("renew certificate: %w", err)
 	}
 
-	fmt.Printf("Certificate renewed successfully for provisioner %q.\n", prov.Name)
+	fmt.Printf("Certificate renewed successfully for provisioner %q.\n", prov.ProvisionerName)
 	return nil
 }
 
@@ -229,7 +229,7 @@ func certInspectAction(c *cli.Context) error {
 		return err
 	}
 
-	paths := certstore.ResolvePaths(cfg.Settings.CertificatesDirectory(), prov.Name)
+	paths := certstore.ResolvePaths(cfg.Settings.CertificatesDirectory(), prov.ProvisionerName)
 
 	certData, err := os.ReadFile(paths.Certificate)
 	if err != nil {
@@ -246,7 +246,7 @@ func certInspectAction(c *cli.Context) error {
 		return fmt.Errorf("parse certificate: %w", err)
 	}
 
-	fmt.Printf("Provisioner:  %s\n", prov.Name)
+	fmt.Printf("Provisioner:  %s\n", prov.ProvisionerName)
 	fmt.Printf("Subject:      %s\n", cert.Subject.CommonName)
 	fmt.Printf("Issuer:       %s\n", cert.Issuer.CommonName)
 	fmt.Printf("Serial:       %s\n", cert.SerialNumber.String())

@@ -68,7 +68,7 @@ func (r *Root) ResolveVariables() error {
 
 	for i := range r.Provisioners {
 		p := &r.Provisioners[i]
-		log.Info("resolving variables for provisioner", "name", p.Name)
+		log.Info("resolving variables for provisioner", "name", p.ProvisionerName)
 
 		// CommonName
 		p.Subject.CommonName = ctx.ResolveCommonName(p.Subject.CommonName)
@@ -88,7 +88,7 @@ func (r *Root) ResolveVariables() error {
 		}
 
 		log.Info("provisioner resolved",
-			"name", p.Name,
+			"name", p.ProvisionerName,
 			"commonName", p.Subject.CommonName,
 			"dnsNames", len(p.Subject.DNSNames),
 			"ips", len(p.Subject.IPAddresses))
@@ -198,16 +198,16 @@ func expandEnvVars(s string) string {
 func (r *Root) Validate() error {
 	names := make(map[string]bool)
 	for i, p := range r.Provisioners {
-		if p.Name == "" {
-			return fmt.Errorf("provisioner[%d]: name is required", i)
+		if p.ProvisionerName == "" {
+			return fmt.Errorf("provisioner[%d]: provisionerName is required", i)
 		}
-		if names[p.Name] {
-			return fmt.Errorf("provisioner[%d]: duplicate name %q", i, p.Name)
+		if names[p.ProvisionerName] {
+			return fmt.Errorf("provisioner[%d]: duplicate provisionerName %q", i, p.ProvisionerName)
 		}
-		names[p.Name] = true
+		names[p.ProvisionerName] = true
 
 		if p.Subject.CommonName == "" && len(p.Subject.DNSNames) == 0 {
-			return fmt.Errorf("provisioner[%d] %q: commonName or at least one dnsName is required", i, p.Name)
+			return fmt.Errorf("provisioner[%d] %q: commonName or at least one dnsName is required", i, p.ProvisionerName)
 		}
 	}
 	return nil
@@ -224,9 +224,8 @@ func GenerateSample() ([]byte, error) {
 		},
 		Provisioners: []Provisioner{
 			{
-				Name:    "workstation-identity",
-				Enabled: true,
-				CAProvisioner: "device-identity",
+				ProvisionerName: "device-identity",
+				Enabled:         true,
 				Subject: Subject{
 					CommonName: "auto",
 					DNSNames:   []string{"auto"},

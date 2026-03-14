@@ -32,42 +32,40 @@ func resolvePassword(auth config.Auth) ([]byte, error) {
 }
 
 // caProvisionerName returns the Step CA provisioner name to use.
-// It delegates to config.Provisioner.CAProvisionerName() which prefers
-// caProvisioner over the local name.
 func caProvisionerName(prov config.Provisioner) string {
-	return prov.CAProvisionerName()
+	return prov.ProvisionerName
 }
 
 // EnrollCertificate generates a key, creates a CSR, obtains a signed JWT
 // token via the Smallstep SDK provisioner, and submits a /sign request.
 func (c *Client) EnrollCertificate(prov config.Provisioner, db *state.DB) error {
 	log := logging.Logger()
-	log.Info("enrolling certificate (SDK)", "provisioner", prov.Name)
+	log.Info("enrolling certificate (SDK)", "provisioner", prov.ProvisionerName)
 
 	// 1. Generate private key
 	privKey, keyPEM, err := generateKey(prov.Key)
 	if err != nil {
-		log.Error("key generation failed", "provisioner", prov.Name, "error", err)
+		log.Error("key generation failed", "provisioner", prov.ProvisionerName, "error", err)
 		if db != nil {
-			_ = db.RecordAuditEvent("enroll_failed", prov.Name, fmt.Sprintf("key generation: %v", err), "error")
+			_ = db.RecordAuditEvent("enroll_failed", prov.ProvisionerName, fmt.Sprintf("key generation: %v", err), "error")
 		}
-		return fmt.Errorf("generate key for %s: %w", prov.Name, err)
+		return fmt.Errorf("generate key for %s: %w", prov.ProvisionerName, err)
 	}
-	log.Info("private key generated", "provisioner", prov.Name, "algorithm", prov.Key.Algorithm)
+	log.Info("private key generated", "provisioner", prov.ProvisionerName, "algorithm", prov.Key.Algorithm)
 
 	// 2. Create CSR
 	csrDER, err := createCSRRaw(privKey, prov.Subject)
 	if err != nil {
-		log.Error("CSR creation failed", "provisioner", prov.Name, "error", err)
-		return fmt.Errorf("create CSR for %s: %w", prov.Name, err)
+		log.Error("CSR creation failed", "provisioner", prov.ProvisionerName, "error", err)
+		return fmt.Errorf("create CSR for %s: %w", prov.ProvisionerName, err)
 	}
-	log.Info("CSR created", "provisioner", prov.Name, "commonName", prov.Subject.CommonName)
+	log.Info("CSR created", "provisioner", prov.ProvisionerName, "commonName", prov.Subject.CommonName)
 
 	// 3. Resolve provisioner password and create SDK provisioner
 	password, err := resolvePassword(prov.Auth)
 	if err != nil {
-		log.Error("password resolution failed", "provisioner", prov.Name, "error", err)
-		return fmt.Errorf("resolve password for %s: %w", prov.Name, err)
+		log.Error("password resolution failed", "provisioner", prov.ProvisionerName, "error", err)
+		return fmt.Errorf("resolve password for %s: %w", prov.ProvisionerName, err)
 	}
 
 	caProvName := caProvisionerName(prov)
@@ -76,21 +74,21 @@ func (c *Client) EnrollCertificate(prov config.Provisioner, db *state.DB) error 
 
 	sdkProv, err := stepca.NewProvisioner(caProvName, "", c.BaseURL+"/", password, c.sdkClientOpts()...)
 	if err != nil {
-		log.Error("SDK provisioner creation failed", "provisioner", prov.Name, "error", err)
+		log.Error("SDK provisioner creation failed", "provisioner", prov.ProvisionerName, "error", err)
 		if db != nil {
-			_ = db.RecordAuditEvent("enroll_failed", prov.Name, fmt.Sprintf("SDK provisioner: %v", err), "error")
+			_ = db.RecordAuditEvent("enroll_failed", prov.ProvisionerName, fmt.Sprintf("SDK provisioner: %v", err), "error")
 		}
-		return fmt.Errorf("create SDK provisioner for %s: %w", prov.Name, err)
+		return fmt.Errorf("create SDK provisioner for %s: %w", prov.ProvisionerName, err)
 	}
 
 	// 4. Generate a signed JWT (OTT) for the subject and SANs
 	sans := collectSANs(prov.Subject)
 	token, err := sdkProv.Token(prov.Subject.CommonName, sans...)
 	if err != nil {
-		log.Error("JWT token generation failed", "provisioner", prov.Name, "error", err)
-		return fmt.Errorf("generate token for %s: %w", prov.Name, err)
+		log.Error("JWT token generation failed", "provisioner", prov.ProvisionerName, "error", err)
+		return fmt.Errorf("generate token for %s: %w", prov.ProvisionerName, err)
 	}
-	log.Info("JWT token generated", "provisioner", prov.Name, "subject", prov.Subject.CommonName)
+	log.Info("JWT token generated", "provisioner", prov.ProvisionerName, "subject", prov.Subject.CommonName)
 
 	// 5. Build and submit sign request via SDK
 	signReq := &api.SignRequest{
@@ -100,13 +98,13 @@ func (c *Client) EnrollCertificate(prov config.Provisioner, db *state.DB) error 
 
 	signResp, err := c.SDK.Sign(signReq)
 	if err != nil {
-		log.Error("certificate signing failed", "provisioner", prov.Name, "error", err)
+		log.Error("certificate signing failed", "provisioner", prov.ProvisionerName, "error", err)
 		if db != nil {
-			_ = db.RecordAuditEvent("enroll_failed", prov.Name, fmt.Sprintf("sign request: %v", err), "error")
+			_ = db.RecordAuditEvent("enroll_failed", prov.ProvisionerName, fmt.Sprintf("sign request: %v", err), "error")
 		}
-		return fmt.Errorf("sign certificate for %s: %w", prov.Name, err)
+		return fmt.Errorf("sign certificate for %s: %w", prov.ProvisionerName, err)
 	}
-	log.Info("certificate signed by CA", "provisioner", prov.Name)
+	log.Info("certificate signed by CA", "provisioner", prov.ProvisionerName)
 
 	// 6. Extract PEM from the SDK response
 	certPEM := pem.EncodeToMemory(&pem.Block{
@@ -123,7 +121,7 @@ func (c *Client) EnrollCertificate(prov config.Provisioner, db *state.DB) error 
 	}
 
 	// 7. Store certificate and key files on disk
-	paths := certstore.ResolvePaths(c.CertsDir, prov.Name)
+	paths := certstore.ResolvePaths(c.CertsDir, prov.ProvisionerName)
 
 	if err := paths.EnsureDir(); err != nil {
 		return err
@@ -149,26 +147,26 @@ func (c *Client) EnrollCertificate(prov config.Provisioner, db *state.DB) error 
 		friendlyRoot := "StepCA Root CA"
 
 		log.Info("store install requested, importing certificate into certificate store",
-			"provisioner", prov.Name,
+			"provisioner", prov.ProvisionerName,
 			"friendlyName", friendlyLeaf,
 			"store", scope)
 
 		if err := certstore.InstallLeafToStoreScoped(certPEM, friendlyLeaf, scope); err != nil {
 			log.Error("store install FAILED for leaf certificate",
-				"provisioner", prov.Name, "store", "MY", "scope", scope, "error", err)
+				"provisioner", prov.ProvisionerName, "store", "MY", "scope", scope, "error", err)
 		} else {
 			log.Info("store install SUCCESS: leaf certificate installed",
-				"provisioner", prov.Name, "store", "MY", "scope", scope, "friendlyName", friendlyLeaf)
+				"provisioner", prov.ProvisionerName, "store", "MY", "scope", scope, "friendlyName", friendlyLeaf)
 			storeInstalled = true
 		}
 
 		if len(chainPEM) > 0 {
 			if err := certstore.InstallIntermediateToStoreScoped(chainPEM, friendlyIntermediate, scope); err != nil {
 				log.Error("store install FAILED for intermediate certificate",
-					"provisioner", prov.Name, "store", "CA", "scope", scope, "error", err)
+					"provisioner", prov.ProvisionerName, "store", "CA", "scope", scope, "error", err)
 			} else {
 				log.Info("store install SUCCESS: intermediate certificate installed",
-					"provisioner", prov.Name, "store", "CA", "scope", scope)
+					"provisioner", prov.ProvisionerName, "store", "CA", "scope", scope)
 			}
 		}
 
@@ -176,10 +174,10 @@ func (c *Client) EnrollCertificate(prov config.Provisioner, db *state.DB) error 
 		if rootPEM, err := os.ReadFile(rootPath); err == nil {
 			if err := certstore.InstallRootToStoreScoped(rootPEM, friendlyRoot, scope); err != nil {
 				log.Error("store install FAILED for root CA",
-					"provisioner", prov.Name, "store", "ROOT", "scope", scope, "error", err)
+					"provisioner", prov.ProvisionerName, "store", "ROOT", "scope", scope, "error", err)
 			} else {
 				log.Info("store install SUCCESS: root CA installed",
-					"provisioner", prov.Name, "store", "ROOT", "scope", scope)
+					"provisioner", prov.ProvisionerName, "store", "ROOT", "scope", scope)
 			}
 		}
 	}
@@ -189,7 +187,7 @@ func (c *Client) EnrollCertificate(prov config.Provisioner, db *state.DB) error 
 		cert := signResp.ServerPEM.Certificate
 		if cert != nil {
 			_ = db.UpsertCertificate(state.CertRecord{
-				Name:             prov.Name,
+				Name:             prov.ProvisionerName,
 				Serial:           cert.SerialNumber.String(),
 				Subject:          cert.Subject.CommonName,
 				Issuer:           cert.Issuer.CommonName,
@@ -200,11 +198,11 @@ func (c *Client) EnrollCertificate(prov config.Provisioner, db *state.DB) error 
 				InstalledToStore: storeInstalled,
 			})
 		}
-		_ = db.RecordAuditEvent("enrolled", prov.Name, "certificate enrolled successfully", "success")
+		_ = db.RecordAuditEvent("enrolled", prov.ProvisionerName, "certificate enrolled successfully", "success")
 	}
 
 	log.Info("certificate enrollment complete",
-		"provisioner", prov.Name,
+		"provisioner", prov.ProvisionerName,
 		"certPath", paths.Certificate,
 		"keyPath", paths.PrivateKey,
 		"installedToStore", storeInstalled)
