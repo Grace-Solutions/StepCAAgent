@@ -39,10 +39,36 @@ type cryptDataBlob struct {
 	Data *byte
 }
 
+// storeFlag maps a StoreScope to the Windows CertOpenStore disposition flag.
+func storeFlag(scope StoreScope) uint32 {
+	switch scope {
+	case ScopeCurrentUser:
+		return windows.CERT_SYSTEM_STORE_CURRENT_USER
+	default:
+		return windows.CERT_SYSTEM_STORE_LOCAL_MACHINE
+	}
+}
+
+// scopeLabel returns a human-readable label for log messages.
+func scopeLabel(scope StoreScope) string {
+	switch scope {
+	case ScopeCurrentUser:
+		return "Current User"
+	default:
+		return "Local Machine"
+	}
+}
+
 // InstallCertToStore imports a PEM-encoded certificate into the named
-// Windows certificate store (e.g., "ROOT", "CA", "MY"). If friendlyName
-// is non-empty, it is set as the certificate's Friendly Name property.
+// Windows certificate store (e.g., "ROOT", "CA", "MY") under Local Machine scope.
+// If friendlyName is non-empty, it is set as the certificate's Friendly Name property.
 func InstallCertToStore(certPEM []byte, storeName, friendlyName string) error {
+	return InstallCertToStoreScoped(certPEM, storeName, friendlyName, ScopeLocalMachine)
+}
+
+// InstallCertToStoreScoped imports a PEM-encoded certificate into the named
+// Windows certificate store with the given scope (Local Machine or Current User).
+func InstallCertToStoreScoped(certPEM []byte, storeName, friendlyName string, scope StoreScope) error {
 	log := logging.Logger()
 
 	block, _ := pem.Decode(certPEM)
@@ -55,14 +81,14 @@ func InstallCertToStore(certPEM []byte, storeName, friendlyName string) error {
 		return fmt.Errorf("winstore: parse certificate: %w", err)
 	}
 
+	label := scopeLabel(scope)
 	log.Info("installing certificate into Windows store",
 		"store", storeName,
-		"scope", "Local Machine",
+		"scope", label,
 		"subject", cert.Subject.CommonName,
 		"serial", cert.SerialNumber,
 		"friendlyName", friendlyName)
 
-	// Open the Local Machine system certificate store
 	storeNameUTF16, err := windows.UTF16PtrFromString(storeName)
 	if err != nil {
 		return fmt.Errorf("winstore: UTF16 store name: %w", err)
@@ -71,11 +97,11 @@ func InstallCertToStore(certPEM []byte, storeName, friendlyName string) error {
 	store, err := windows.CertOpenStore(
 		windows.CERT_STORE_PROV_SYSTEM,
 		0, 0,
-		windows.CERT_SYSTEM_STORE_LOCAL_MACHINE,
+		storeFlag(scope),
 		uintptr(unsafe.Pointer(storeNameUTF16)),
 	)
 	if err != nil {
-		return fmt.Errorf("winstore: open store %q (Local Machine): %w", storeName, err)
+		return fmt.Errorf("winstore: open store %q (%s): %w", storeName, label, err)
 	}
 	defer windows.CertCloseStore(store, 0)
 
@@ -280,9 +306,22 @@ func RemoveCertFromStore(certPEM []byte, storeName string) error {
 	return nil
 }
 
-// InstallRootToStore installs a root CA certificate into the Trusted Root store.
+// InstallRootToStore installs a root CA certificate into the Local Machine Trusted Root store.
 func InstallRootToStore(rootPEM []byte, friendlyName string) error {
-	return InstallCertToStore(rootPEM, StoreRoot, friendlyName)
+	return InstallCertToStoreScoped(rootPEM, StoreRoot, friendlyName, ScopeLocalMachine)
+}
+
+// InstallRootToStoreScoped installs a root CA certificate into the Trusted Root
+// store with the given scope. If scope is ScopeBoth, the cert is installed into
+// both Local Machine and Current User stores.
+func InstallRootToStoreScoped(rootPEM []byte, friendlyName string, scope StoreScope) error {
+	if scope == ScopeBoth {
+		if err := InstallCertToStoreScoped(rootPEM, StoreRoot, friendlyName, ScopeLocalMachine); err != nil {
+			return fmt.Errorf("install root (Local Machine): %w", err)
+		}
+		return InstallCertToStoreScoped(rootPEM, StoreRoot, friendlyName, ScopeCurrentUser)
+	}
+	return InstallCertToStoreScoped(rootPEM, StoreRoot, friendlyName, scope)
 }
 
 // InstallIntermediateToStore installs an intermediate CA cert into the CA store.

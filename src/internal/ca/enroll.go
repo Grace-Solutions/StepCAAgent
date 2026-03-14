@@ -140,18 +140,16 @@ func (c *Client) EnrollCertificate(prov config.Provisioner, db *state.DB) error 
 		}
 	}
 
-	// 7b. Install into Windows Certificate Store if enabled
+	// 7b. Install into platform certificate store if enabled
 	storeInstalled := false
 	if prov.InstallToStore {
-		log.Info("store install requested, importing certificate into Windows Certificate Store",
-			"provisioner", prov.Name,
-			"leafStore", "MY",
-			"intermediateStore", "CA",
-			"rootStore", "ROOT")
-
-		friendlyLeaf := fmt.Sprintf("StepCA - %s", prov.Name)
-		friendlyIntermediate := fmt.Sprintf("StepCA - %s (Intermediate)", prov.Name)
+		friendlyLeaf := prov.ResolvedFriendlyName()
+		friendlyIntermediate := prov.ResolvedIntermediateFriendlyName()
 		friendlyRoot := "StepCA Root CA"
+
+		log.Info("store install requested, importing certificate into certificate store",
+			"provisioner", prov.Name,
+			"friendlyName", friendlyLeaf)
 
 		if err := certstore.InstallLeafToStore(certPEM, friendlyLeaf); err != nil {
 			log.Error("store install FAILED for leaf certificate",

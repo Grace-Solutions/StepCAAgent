@@ -13,7 +13,9 @@
         {
             "name": "workstation-identity",
             "enabled": true,
+            "installToStore": true,
             "caProvisioner": "device-identity",
+            "friendlyName": "auto",
             "subject": {
                 "commonName": "auto",
                 "dnsNames": ["auto"],
@@ -27,7 +29,9 @@
         {
             "name": "web-api-tls",
             "enabled": true,
+            "installToStore": false,
             "caProvisioner": "svc-web",
+            "friendlyName": "My Custom TLS Cert",
             "subject": {
                 "commonName": "auto",
                 "dnsNames": ["auto"],

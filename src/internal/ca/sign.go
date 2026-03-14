@@ -78,18 +78,16 @@ func (c *Client) RenewCertificate(prov config.Provisioner, db *state.DB) error {
 		}
 	}
 
-	// Install into Windows Certificate Store if enabled
+	// Install into platform certificate store if enabled
 	storeInstalled := false
 	if prov.InstallToStore {
-		log.Info("store install requested, importing renewed certificate into Windows Certificate Store",
-			"provisioner", prov.Name,
-			"leafStore", "MY",
-			"intermediateStore", "CA",
-			"rootStore", "ROOT")
-
-		friendlyLeaf := fmt.Sprintf("StepCA - %s", prov.Name)
-		friendlyIntermediate := fmt.Sprintf("StepCA - %s (Intermediate)", prov.Name)
+		friendlyLeaf := prov.ResolvedFriendlyName()
+		friendlyIntermediate := prov.ResolvedIntermediateFriendlyName()
 		friendlyRoot := "StepCA Root CA"
+
+		log.Info("store install requested, importing renewed certificate into certificate store",
+			"provisioner", prov.Name,
+			"friendlyName", friendlyLeaf)
 
 		if err := certstore.InstallLeafToStore(certPEM, friendlyLeaf); err != nil {
 			log.Error("store install FAILED for renewed leaf certificate",

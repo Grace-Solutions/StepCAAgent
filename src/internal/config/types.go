@@ -2,7 +2,10 @@
 // validation, and file-permission verification for the agent config.
 package config
 
-import "path/filepath"
+import (
+	"fmt"
+	"path/filepath"
+)
 
 // ServiceName is the canonical service name, embedded in code rather than config.
 const ServiceName = "stepcaagent"
@@ -78,8 +81,9 @@ type Trust struct {
 type Provisioner struct {
 	Name           string       `json:"name"`
 	Enabled        bool         `json:"enabled"`
-	InstallToStore bool         `json:"installToStore"`   // if true, import cert into Windows Certificate Store
-	CAProvisioner  string       `json:"caProvisioner"`    // provisioner name on the CA; defaults to Name if empty
+	InstallToStore bool         `json:"installToStore"`          // if true, import cert into platform certificate store
+	CAProvisioner  string       `json:"caProvisioner,omitempty"` // provisioner name on the CA; defaults to Name if empty
+	FriendlyName   string       `json:"friendlyName,omitempty"`  // display name in cert store; "auto" (default) = "StepCA - <name>"
 	Subject        Subject      `json:"subject"`
 	Key            Key          `json:"key"`
 	Renewal        Renewal      `json:"renewal"`
@@ -96,6 +100,20 @@ func (p Provisioner) CAProvisionerName() string {
 		return p.CAProvisioner
 	}
 	return p.Name
+}
+
+// ResolvedFriendlyName returns the friendly name to use in the certificate store.
+// If FriendlyName is empty or "auto", returns "StepCA - <name>".
+func (p Provisioner) ResolvedFriendlyName() string {
+	if p.FriendlyName == "" || p.FriendlyName == "auto" {
+		return fmt.Sprintf("StepCA - %s", p.Name)
+	}
+	return p.FriendlyName
+}
+
+// ResolvedIntermediateFriendlyName returns the friendly name for the intermediate CA cert.
+func (p Provisioner) ResolvedIntermediateFriendlyName() string {
+	return fmt.Sprintf("%s (Intermediate)", p.ResolvedFriendlyName())
 }
 
 // Subject holds certificate subject/SAN fields.

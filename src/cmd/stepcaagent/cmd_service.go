@@ -108,23 +108,23 @@ func (a *agentService) run(ctx context.Context) {
 		prevRootsInstalled, _ := db.GetRootsInstalled()
 
 		if cfg.Settings.Trust.InstallRoots {
-			// Flag is ON → install root to store
+			// Flag is ON → install root to system trust store
 			if rootPEM, readErr := os.ReadFile(rootPath); readErr == nil {
 				if storeErr := certstore.InstallRootToStore(rootPEM, "StepCA Root CA"); storeErr != nil {
 					log.Error("store install FAILED for root CA", "store", "ROOT", "error", storeErr)
 				} else {
-					log.Info("store install SUCCESS: root CA installed to Windows Trusted Root store")
+					log.Info("store install SUCCESS: root CA installed to system trust store")
 					_ = db.SetRootsInstalled(true)
 				}
 			}
 		} else if prevRootsInstalled {
-			// Flag changed from true → false: remove root from store
-			log.Info("installRoots changed to false, removing root CA from Windows Trusted Root store")
+			// Flag changed from true → false: remove root from system trust store
+			log.Info("installRoots changed to false, removing root CA from system trust store")
 			if rootPEM, readErr := os.ReadFile(rootPath); readErr == nil {
 				if storeErr := certstore.RemoveRootFromStore(rootPEM); storeErr != nil {
 					log.Error("store remove FAILED for root CA", "store", "ROOT", "error", storeErr)
 				} else {
-					log.Info("store remove SUCCESS: root CA removed from Windows Trusted Root store")
+					log.Info("store remove SUCCESS: root CA removed from system trust store")
 					_ = db.SetRootsInstalled(false)
 				}
 			}
