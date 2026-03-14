@@ -145,3 +145,45 @@ func isPlaceholderSerial(s string) bool {
 	return false
 }
 
+// detectOSInfo detects the OS name, version, and product type on Windows.
+// ProductType: 1 = Workstation, 2 = Domain Controller (Server), 3 = Server.
+func detectOSInfo() OSInfo {
+	log := logging.Logger()
+	info := OSInfo{ProductType: "Workstation"}
+
+	// OS Caption (e.g. "Microsoft Windows 11 Pro")
+	out, err := exec.Command("powershell", "-NoProfile", "-Command",
+		"(Get-CimInstance Win32_OperatingSystem).Caption").CombinedOutput()
+	if err == nil {
+		info.Name = strings.TrimSpace(string(out))
+	} else {
+		log.Debug("auto-discovery: Win32_OperatingSystem Caption query failed", "error", err)
+	}
+
+	// OS Version (e.g. "10.0.22631")
+	out, err = exec.Command("powershell", "-NoProfile", "-Command",
+		"(Get-CimInstance Win32_OperatingSystem).Version").CombinedOutput()
+	if err == nil {
+		info.Version = strings.TrimSpace(string(out))
+	} else {
+		log.Debug("auto-discovery: Win32_OperatingSystem Version query failed", "error", err)
+	}
+
+	// ProductType: 1=Workstation, 2=DomainController, 3=Server
+	out, err = exec.Command("powershell", "-NoProfile", "-Command",
+		"(Get-CimInstance Win32_OperatingSystem).ProductType").CombinedOutput()
+	if err == nil {
+		pt := strings.TrimSpace(string(out))
+		if pt == "2" || pt == "3" {
+			info.ProductType = "Server"
+		}
+	} else {
+		log.Debug("auto-discovery: Win32_OperatingSystem ProductType query failed", "error", err)
+	}
+
+	log.Info("auto-discovery: OS info detected",
+		"name", info.Name,
+		"version", info.Version,
+		"productType", info.ProductType)
+	return info
+}

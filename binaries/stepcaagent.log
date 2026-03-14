@@ -423,3 +423,198 @@
 [2026-03-14T18:30:27Z] - [INFO] - provisioner not due yet, health check passed provisioner=mecm-server nextScheduled=2026-11-13 02:21:56 +0000 UTC remaining=5839h51m28.5501739s
 [2026-03-14T18:30:27Z] - [INFO] - reconciliation cycle complete
 [2026-03-14T18:30:27Z] - [INFO] - run-once mode: reconciliation complete, exiting
+[2026-03-14T18:53:08Z] - [INFO] - resolving config variables and auto-SANs
+[2026-03-14T18:53:08Z] - [INFO] - building variable context
+[2026-03-14T18:53:08Z] - [INFO] - auto-discovery starting
+[2026-03-14T18:53:08Z] - [INFO] - auto-discovery: hostname detected hostname=C79KMG3
+[2026-03-14T18:53:11Z] - [INFO] - auto-discovery: DNS suffixes detected count=4 suffixes=ts.net,lan,netbird.cloud,gracesolution.prv
+[2026-03-14T18:53:11Z] - [INFO] - auto-discovery: IPs detected total=4 ipv4=3 ipv6=1
+[2026-03-14T18:53:11Z] - [INFO] - auto-discovery: attempting serial number detection on Windows
+[2026-03-14T18:53:12Z] - [INFO] - auto-discovery: serial number detected via BIOS serial=C79KMG3
+[2026-03-14T18:53:12Z] - [INFO] - auto-discovery: serial number detected serial=C79KMG3
+[2026-03-14T18:53:12Z] - [INFO] - auto-discovery complete dnsNames=5 ipv4=3 ipv6=1 serial=C79KMG3 winpe=false
+[2026-03-14T18:53:12Z] - [INFO] - variable context built hostname=c79kmg3 fqdn=c79kmg3.ts.net domain=ts.net ip=100.75.99.43 serial=C79KMG3 winpe=false dns_suffixes=4 ipv4_count=3 ipv6_count=1
+[2026-03-14T18:53:12Z] - [INFO] - resolving variables for provisioner name=mecm
+[2026-03-14T18:53:12Z] - [INFO] - provisioner resolved name=mecm commonName=c79kmg3 dnsNames=5 ips=4
+[2026-03-14T18:53:12Z] - [INFO] - resolving variables for provisioner name=mecm-server
+[2026-03-14T18:53:12Z] - [INFO] - provisioner resolved name=mecm-server commonName=c79kmg3 dnsNames=5 ips=4
+[2026-03-14T18:53:12Z] - [INFO] - config loaded path=samples\config.json provisioners=2
+[2026-03-14T18:53:12Z] - [INFO] - run-once mode: loaded configuration provisioners=2
+[2026-03-14T18:53:12Z] - [INFO] - state database opened path=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\state\stepcaagent.db mode=wal
+[2026-03-14T18:53:12Z] - [INFO] - creating CA client (SDK) url=https://prod.pki.gracesolution.info:9100 certsDir=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates
+[2026-03-14T18:53:12Z] - [INFO] - loaded existing root CA path=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates\root\root.pem
+[2026-03-14T18:53:12Z] - [INFO] - CA client created (SDK) url=https://prod.pki.gracesolution.info:9100
+[2026-03-14T18:53:12Z] - [INFO] - checking if root CA needs refresh
+[2026-03-14T18:53:12Z] - [INFO] - root CA expiry check notAfter=2036-03-06 20:14:10 +0000 UTC withinDuration=720h0m0s expiring=false
+[2026-03-14T18:53:12Z] - [INFO] - root CA is still valid, no refresh needed
+[2026-03-14T18:53:12Z] - [INFO] - starting reconciliation cycle provisioners=2
+[2026-03-14T18:53:12Z] - [INFO] - certificate paths resolved provisioner=mecm cert=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates\mecm\certificate.pem key=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates\mecm\private.key chain=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates\mecm\chain.pem
+[2026-03-14T18:53:12Z] - [WARN] - certificate health check failed, forcing re-enrollment provisioner=mecm reason=certificate missing from Windows certificate store
+[2026-03-14T18:53:12Z] - [INFO] - processing provisioner name=mecm
+[2026-03-14T18:53:12Z] - [INFO] - certificate paths resolved provisioner=mecm cert=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates\mecm\certificate.pem key=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates\mecm\private.key chain=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates\mecm\chain.pem
+[2026-03-14T18:53:12Z] - [INFO] - certificate renewal check provisioner=mecm notBefore=2026-03-14 18:21:16 +0000 UTC notAfter=2027-03-14 18:22:16 +0000 UTC renewAt=2026-11-13 02:21:56 +0000 UTC remaining=8759h29m3.5870165s needsRenewal=false
+[2026-03-14T18:53:12Z] - [INFO] - certificate is current, no action needed provisioner=mecm nextRenewalAt=2026-11-13 02:21:56 +0000 UTC
+[2026-03-14T18:53:12Z] - [INFO] - certificate paths resolved provisioner=mecm-server cert=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates\mecm-server\certificate.pem key=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates\mecm-server\private.key chain=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates\mecm-server\chain.pem
+[2026-03-14T18:53:12Z] - [WARN] - certificate health check failed, forcing re-enrollment provisioner=mecm-server reason=certificate missing from Windows certificate store
+[2026-03-14T18:53:12Z] - [INFO] - processing provisioner name=mecm-server
+[2026-03-14T18:53:12Z] - [INFO] - certificate paths resolved provisioner=mecm-server cert=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates\mecm-server\certificate.pem key=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates\mecm-server\private.key chain=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates\mecm-server\chain.pem
+[2026-03-14T18:53:12Z] - [INFO] - certificate renewal check provisioner=mecm-server notBefore=2026-03-14 18:21:16 +0000 UTC notAfter=2027-03-14 18:22:16 +0000 UTC renewAt=2026-11-13 02:21:56 +0000 UTC remaining=8759h29m3.5824343s needsRenewal=false
+[2026-03-14T18:53:12Z] - [INFO] - certificate is current, no action needed provisioner=mecm-server nextRenewalAt=2026-11-13 02:21:56 +0000 UTC
+[2026-03-14T18:53:12Z] - [INFO] - reconciliation cycle complete
+[2026-03-14T18:53:12Z] - [INFO] - run-once mode: reconciliation complete, exiting
+[2026-03-14T18:57:15Z] - [INFO] - resolving config variables and auto-SANs
+[2026-03-14T18:57:15Z] - [INFO] - building variable context
+[2026-03-14T18:57:15Z] - [INFO] - auto-discovery starting
+[2026-03-14T18:57:15Z] - [INFO] - auto-discovery: hostname detected hostname=C79KMG3
+[2026-03-14T18:57:17Z] - [INFO] - auto-discovery: DNS suffixes detected count=4 suffixes=ts.net,lan,netbird.cloud,gracesolution.prv
+[2026-03-14T18:57:17Z] - [INFO] - auto-discovery: IPs detected total=4 ipv4=3 ipv6=1
+[2026-03-14T18:57:17Z] - [INFO] - auto-discovery: attempting serial number detection on Windows
+[2026-03-14T18:57:18Z] - [INFO] - auto-discovery: serial number detected via BIOS serial=C79KMG3
+[2026-03-14T18:57:18Z] - [INFO] - auto-discovery: serial number detected serial=C79KMG3
+[2026-03-14T18:57:18Z] - [INFO] - auto-discovery complete dnsNames=5 ipv4=3 ipv6=1 serial=C79KMG3 winpe=false
+[2026-03-14T18:57:18Z] - [INFO] - variable context built hostname=c79kmg3 fqdn=c79kmg3.ts.net domain=ts.net ip=100.75.99.43 serial=C79KMG3 winpe=false dns_suffixes=4 ipv4_count=3 ipv6_count=1
+[2026-03-14T18:57:18Z] - [INFO] - resolving variables for provisioner name=mecm
+[2026-03-14T18:57:18Z] - [INFO] - provisioner resolved name=mecm commonName=c79kmg3 dnsNames=5 ips=4
+[2026-03-14T18:57:18Z] - [INFO] - resolving variables for provisioner name=mecm-server
+[2026-03-14T18:57:18Z] - [INFO] - provisioner resolved name=mecm-server commonName=c79kmg3 dnsNames=5 ips=4
+[2026-03-14T18:57:18Z] - [INFO] - config loaded path=samples\config.json provisioners=2
+[2026-03-14T18:57:18Z] - [INFO] - run-once mode: loaded configuration provisioners=2
+[2026-03-14T18:57:18Z] - [INFO] - state database opened path=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\state\stepcaagent.db mode=wal
+[2026-03-14T18:57:18Z] - [INFO] - creating CA client (SDK) url=https://prod.pki.gracesolution.info:9100 certsDir=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates
+[2026-03-14T18:57:18Z] - [INFO] - loaded existing root CA path=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates\root\root.pem
+[2026-03-14T18:57:18Z] - [INFO] - CA client created (SDK) url=https://prod.pki.gracesolution.info:9100
+[2026-03-14T18:57:18Z] - [INFO] - checking if root CA needs refresh
+[2026-03-14T18:57:18Z] - [INFO] - root CA expiry check notAfter=2036-03-06 20:14:10 +0000 UTC withinDuration=720h0m0s expiring=false
+[2026-03-14T18:57:18Z] - [INFO] - root CA is still valid, no refresh needed
+[2026-03-14T18:57:18Z] - [INFO] - starting reconciliation cycle provisioners=2
+[2026-03-14T18:57:18Z] - [INFO] - certificate paths resolved provisioner=mecm cert=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates\mecm\certificate.pem key=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates\mecm\private.key chain=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates\mecm\chain.pem
+[2026-03-14T18:57:18Z] - [WARN] - certificate health check failed, forcing convergence provisioner=mecm reason=certificate missing from Windows certificate store
+[2026-03-14T18:57:18Z] - [INFO] - processing provisioner name=mecm
+[2026-03-14T18:57:18Z] - [INFO] - certificate paths resolved provisioner=mecm cert=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates\mecm\certificate.pem key=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates\mecm\private.key chain=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates\mecm\chain.pem
+[2026-03-14T18:57:18Z] - [INFO] - certificate renewal check provisioner=mecm notBefore=2026-03-14 18:21:16 +0000 UTC notAfter=2027-03-14 18:22:16 +0000 UTC renewAt=2026-11-13 02:21:56 +0000 UTC remaining=8759h24m57.0641691s needsRenewal=false
+[2026-03-14T18:57:18Z] - [INFO] - certificate is current but not converged, re-installing to store provisioner=mecm reason=certificate missing from Windows certificate store
+[2026-03-14T18:57:18Z] - [INFO] - certificate paths resolved provisioner=mecm cert=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates\mecm\certificate.pem key=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates\mecm\private.key chain=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates\mecm\chain.pem
+[2026-03-14T18:57:18Z] - [INFO] - installing certificate into Windows store store=MY scope=Local Machine subject=c79kmg3 serial=25925851844692324285211947239549960660 friendlyName=mecm
+[2026-03-14T18:57:18Z] - [INFO] - certificate installed into Windows store store=MY subject=c79kmg3 friendlyName=mecm
+[2026-03-14T18:57:18Z] - [INFO] - convergence: store install SUCCESS: leaf certificate installed provisioner=mecm store=MY scope=localmachine friendlyName=mecm
+[2026-03-14T18:57:18Z] - [INFO] - installing certificate into Windows store store=CA scope=Local Machine subject=Grace Solutions CA Intermediate CA serial=338078982104588382966706625325357094292 friendlyName=mecm (Intermediate)
+[2026-03-14T18:57:18Z] - [INFO] - certificate installed into Windows store store=CA subject=Grace Solutions CA Intermediate CA friendlyName=mecm (Intermediate)
+[2026-03-14T18:57:18Z] - [INFO] - convergence: store install SUCCESS: intermediate certificate installed provisioner=mecm store=CA scope=localmachine
+[2026-03-14T18:57:18Z] - [INFO] - installing certificate into Windows store store=ROOT scope=Local Machine subject=Grace Solutions CA Root CA serial=106139686066813549378561405061246944748 friendlyName=StepCA Root CA
+[2026-03-14T18:57:18Z] - [INFO] - certificate installed into Windows store store=ROOT subject=Grace Solutions CA Root CA friendlyName=StepCA Root CA
+[2026-03-14T18:57:18Z] - [INFO] - convergence: store install SUCCESS: root CA installed provisioner=mecm store=ROOT scope=localmachine
+[2026-03-14T18:57:18Z] - [INFO] - certificate paths resolved provisioner=mecm-server cert=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates\mecm-server\certificate.pem key=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates\mecm-server\private.key chain=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates\mecm-server\chain.pem
+[2026-03-14T18:57:18Z] - [WARN] - certificate health check failed, forcing convergence provisioner=mecm-server reason=certificate missing from Windows certificate store
+[2026-03-14T18:57:18Z] - [INFO] - processing provisioner name=mecm-server
+[2026-03-14T18:57:18Z] - [INFO] - certificate paths resolved provisioner=mecm-server cert=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates\mecm-server\certificate.pem key=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates\mecm-server\private.key chain=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates\mecm-server\chain.pem
+[2026-03-14T18:57:18Z] - [INFO] - certificate renewal check provisioner=mecm-server notBefore=2026-03-14 18:21:16 +0000 UTC notAfter=2027-03-14 18:22:16 +0000 UTC renewAt=2026-11-13 02:21:56 +0000 UTC remaining=8759h24m57.0474757s needsRenewal=false
+[2026-03-14T18:57:18Z] - [INFO] - certificate is current but not converged, re-installing to store provisioner=mecm-server reason=certificate missing from Windows certificate store
+[2026-03-14T18:57:18Z] - [INFO] - certificate paths resolved provisioner=mecm-server cert=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates\mecm-server\certificate.pem key=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates\mecm-server\private.key chain=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates\mecm-server\chain.pem
+[2026-03-14T18:57:18Z] - [INFO] - installing certificate into Windows store store=MY scope=Local Machine subject=c79kmg3 serial=50998905608574634277379490076731955917 friendlyName=mecm-server
+[2026-03-14T18:57:18Z] - [INFO] - certificate installed into Windows store store=MY subject=c79kmg3 friendlyName=mecm-server
+[2026-03-14T18:57:18Z] - [INFO] - convergence: store install SUCCESS: leaf certificate installed provisioner=mecm-server store=MY scope=localmachine friendlyName=mecm-server
+[2026-03-14T18:57:18Z] - [INFO] - installing certificate into Windows store store=CA scope=Local Machine subject=Grace Solutions CA Intermediate CA serial=338078982104588382966706625325357094292 friendlyName=mecm-server (Intermediate)
+[2026-03-14T18:57:18Z] - [INFO] - certificate installed into Windows store store=CA subject=Grace Solutions CA Intermediate CA friendlyName=mecm-server (Intermediate)
+[2026-03-14T18:57:18Z] - [INFO] - convergence: store install SUCCESS: intermediate certificate installed provisioner=mecm-server store=CA scope=localmachine
+[2026-03-14T18:57:18Z] - [INFO] - installing certificate into Windows store store=ROOT scope=Local Machine subject=Grace Solutions CA Root CA serial=106139686066813549378561405061246944748 friendlyName=StepCA Root CA
+[2026-03-14T18:57:18Z] - [INFO] - certificate installed into Windows store store=ROOT subject=Grace Solutions CA Root CA friendlyName=StepCA Root CA
+[2026-03-14T18:57:18Z] - [INFO] - convergence: store install SUCCESS: root CA installed provisioner=mecm-server store=ROOT scope=localmachine
+[2026-03-14T18:57:18Z] - [INFO] - reconciliation cycle complete
+[2026-03-14T18:57:18Z] - [INFO] - run-once mode: reconciliation complete, exiting
+[2026-03-14T18:57:29Z] - [INFO] - resolving config variables and auto-SANs
+[2026-03-14T18:57:29Z] - [INFO] - building variable context
+[2026-03-14T18:57:29Z] - [INFO] - auto-discovery starting
+[2026-03-14T18:57:29Z] - [INFO] - auto-discovery: hostname detected hostname=C79KMG3
+[2026-03-14T18:57:32Z] - [INFO] - auto-discovery: DNS suffixes detected count=4 suffixes=ts.net,lan,netbird.cloud,gracesolution.prv
+[2026-03-14T18:57:32Z] - [INFO] - auto-discovery: IPs detected total=4 ipv4=3 ipv6=1
+[2026-03-14T18:57:32Z] - [INFO] - auto-discovery: attempting serial number detection on Windows
+[2026-03-14T18:57:33Z] - [INFO] - auto-discovery: serial number detected via BIOS serial=C79KMG3
+[2026-03-14T18:57:33Z] - [INFO] - auto-discovery: serial number detected serial=C79KMG3
+[2026-03-14T18:57:33Z] - [INFO] - auto-discovery complete dnsNames=5 ipv4=3 ipv6=1 serial=C79KMG3 winpe=false
+[2026-03-14T18:57:33Z] - [INFO] - variable context built hostname=c79kmg3 fqdn=c79kmg3.ts.net domain=ts.net ip=100.75.99.43 serial=C79KMG3 winpe=false dns_suffixes=4 ipv4_count=3 ipv6_count=1
+[2026-03-14T18:57:33Z] - [INFO] - resolving variables for provisioner name=mecm
+[2026-03-14T18:57:33Z] - [INFO] - provisioner resolved name=mecm commonName=c79kmg3 dnsNames=5 ips=4
+[2026-03-14T18:57:33Z] - [INFO] - resolving variables for provisioner name=mecm-server
+[2026-03-14T18:57:33Z] - [INFO] - provisioner resolved name=mecm-server commonName=c79kmg3 dnsNames=5 ips=4
+[2026-03-14T18:57:33Z] - [INFO] - config loaded path=samples\config.json provisioners=2
+[2026-03-14T18:57:33Z] - [INFO] - run-once mode: loaded configuration provisioners=2
+[2026-03-14T18:57:33Z] - [INFO] - state database opened path=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\state\stepcaagent.db mode=wal
+[2026-03-14T18:57:33Z] - [INFO] - creating CA client (SDK) url=https://prod.pki.gracesolution.info:9100 certsDir=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates
+[2026-03-14T18:57:33Z] - [INFO] - loaded existing root CA path=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates\root\root.pem
+[2026-03-14T18:57:33Z] - [INFO] - CA client created (SDK) url=https://prod.pki.gracesolution.info:9100
+[2026-03-14T18:57:33Z] - [INFO] - checking if root CA needs refresh
+[2026-03-14T18:57:33Z] - [INFO] - root CA expiry check notAfter=2036-03-06 20:14:10 +0000 UTC withinDuration=720h0m0s expiring=false
+[2026-03-14T18:57:33Z] - [INFO] - root CA is still valid, no refresh needed
+[2026-03-14T18:57:33Z] - [INFO] - starting reconciliation cycle provisioners=2
+[2026-03-14T18:57:33Z] - [INFO] - certificate paths resolved provisioner=mecm cert=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates\mecm\certificate.pem key=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates\mecm\private.key chain=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates\mecm\chain.pem
+[2026-03-14T18:57:33Z] - [INFO] - provisioner not due yet, health check passed provisioner=mecm nextScheduled=2026-11-13 02:21:56 +0000 UTC remaining=5839h24m22.6128102s
+[2026-03-14T18:57:33Z] - [INFO] - certificate paths resolved provisioner=mecm-server cert=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates\mecm-server\certificate.pem key=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates\mecm-server\private.key chain=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates\mecm-server\chain.pem
+[2026-03-14T18:57:33Z] - [INFO] - provisioner not due yet, health check passed provisioner=mecm-server nextScheduled=2026-11-13 02:21:56 +0000 UTC remaining=5839h24m22.6110571s
+[2026-03-14T18:57:33Z] - [INFO] - reconciliation cycle complete
+[2026-03-14T18:57:33Z] - [INFO] - run-once mode: reconciliation complete, exiting
+[2026-03-14T22:17:04Z] - [INFO] - resolving config variables and auto-SANs
+[2026-03-14T22:17:04Z] - [INFO] - building variable context
+[2026-03-14T22:17:04Z] - [INFO] - auto-discovery starting
+[2026-03-14T22:17:04Z] - [INFO] - auto-discovery: hostname detected hostname=C79KMG3
+[2026-03-14T22:17:09Z] - [INFO] - auto-discovery: DNS suffixes detected count=4 suffixes=ts.net,lan,netbird.cloud,gracesolution.prv
+[2026-03-14T22:17:09Z] - [INFO] - auto-discovery: IPs detected total=4 ipv4=3 ipv6=1
+[2026-03-14T22:17:09Z] - [INFO] - auto-discovery: attempting serial number detection on Windows
+[2026-03-14T22:17:10Z] - [INFO] - auto-discovery: serial number detected via BIOS serial=C79KMG3
+[2026-03-14T22:17:10Z] - [INFO] - auto-discovery: serial number detected serial=C79KMG3
+[2026-03-14T22:17:12Z] - [INFO] - auto-discovery: OS info detected name=Microsoft Windows 11 Enterprise version=10.0.26200 productType=Client
+[2026-03-14T22:17:12Z] - [INFO] - auto-discovery: OS detected name=Microsoft Windows 11 Enterprise version=10.0.26200 productType=Client
+[2026-03-14T22:17:12Z] - [INFO] - auto-discovery complete dnsNames=5 ipv4=3 ipv6=1 serial=C79KMG3 winpe=false os=Microsoft Windows 11 Enterprise osType=Client
+[2026-03-14T22:17:12Z] - [INFO] - variable context built hostname=c79kmg3 fqdn=c79kmg3.ts.net domain=ts.net ip=100.75.99.43 serial=C79KMG3 winpe=false dns_suffixes=4 ipv4_count=3 ipv6_count=1
+[2026-03-14T22:17:12Z] - [INFO] - resolving variables for provisioner name=mecm
+[2026-03-14T22:17:12Z] - [INFO] - provisioner resolved name=mecm commonName=c79kmg3 dnsNames=5 ips=4
+[2026-03-14T22:17:12Z] - [INFO] - resolving variables for provisioner name=mecm-server
+[2026-03-14T22:17:12Z] - [INFO] - provisioner resolved name=mecm-server commonName=c79kmg3 dnsNames=5 ips=4
+[2026-03-14T22:17:12Z] - [INFO] - config loaded path=samples\config.json provisioners=2
+[2026-03-14T22:17:12Z] - [INFO] - run-once mode: loaded configuration provisioners=2
+[2026-03-14T22:17:12Z] - [INFO] - state database opened path=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\state\stepcaagent.db mode=wal
+[2026-03-14T22:17:12Z] - [INFO] - creating CA client (SDK) url=https://prod.pki.gracesolution.info:9100 certsDir=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates
+[2026-03-14T22:17:12Z] - [INFO] - loaded existing root CA path=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates\root\root.pem
+[2026-03-14T22:17:12Z] - [INFO] - CA client created (SDK) url=https://prod.pki.gracesolution.info:9100
+[2026-03-14T22:17:12Z] - [INFO] - checking if root CA needs refresh
+[2026-03-14T22:17:12Z] - [INFO] - root CA expiry check notAfter=2036-03-06 20:14:10 +0000 UTC withinDuration=720h0m0s expiring=false
+[2026-03-14T22:17:12Z] - [INFO] - root CA is still valid, no refresh needed
+[2026-03-14T22:17:12Z] - [INFO] - starting reconciliation cycle provisioners=2
+[2026-03-14T22:17:12Z] - [INFO] - certificate paths resolved provisioner=mecm cert=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates\mecm\certificate.pem key=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates\mecm\private.key chain=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates\mecm\chain.pem
+[2026-03-14T22:17:12Z] - [INFO] - provisioner not due yet, health check passed provisioner=mecm nextScheduled=2026-11-13 02:21:56 +0000 UTC remaining=5836h4m43.2017097s
+[2026-03-14T22:17:12Z] - [INFO] - certificate paths resolved provisioner=mecm-server cert=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates\mecm-server\certificate.pem key=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates\mecm-server\private.key chain=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates\mecm-server\chain.pem
+[2026-03-14T22:17:12Z] - [INFO] - provisioner not due yet, health check passed provisioner=mecm-server nextScheduled=2026-11-13 02:21:56 +0000 UTC remaining=5836h4m43.1856242s
+[2026-03-14T22:17:12Z] - [INFO] - reconciliation cycle complete
+[2026-03-14T22:17:12Z] - [INFO] - run-once mode: reconciliation complete, exiting
+[2026-03-14T22:20:10Z] - [INFO] - resolving config variables and auto-SANs
+[2026-03-14T22:20:10Z] - [INFO] - building variable context
+[2026-03-14T22:20:10Z] - [INFO] - auto-discovery starting
+[2026-03-14T22:20:10Z] - [INFO] - auto-discovery: hostname detected hostname=C79KMG3
+[2026-03-14T22:20:12Z] - [INFO] - auto-discovery: DNS suffixes detected count=4 suffixes=ts.net,lan,netbird.cloud,gracesolution.prv
+[2026-03-14T22:20:12Z] - [INFO] - auto-discovery: IPs detected total=4 ipv4=3 ipv6=1
+[2026-03-14T22:20:12Z] - [INFO] - auto-discovery: attempting serial number detection on Windows
+[2026-03-14T22:20:13Z] - [INFO] - auto-discovery: serial number detected via BIOS serial=C79KMG3
+[2026-03-14T22:20:13Z] - [INFO] - auto-discovery: serial number detected serial=C79KMG3
+[2026-03-14T22:20:16Z] - [INFO] - auto-discovery: OS info detected name=Microsoft Windows 11 Enterprise version=10.0.26200 productType=Workstation
+[2026-03-14T22:20:16Z] - [INFO] - auto-discovery: OS detected name=Microsoft Windows 11 Enterprise version=10.0.26200 productType=Workstation
+[2026-03-14T22:20:16Z] - [INFO] - auto-discovery complete dnsNames=5 ipv4=3 ipv6=1 serial=C79KMG3 winpe=false os=Microsoft Windows 11 Enterprise osType=Workstation
+[2026-03-14T22:20:16Z] - [INFO] - variable context built hostname=c79kmg3 fqdn=c79kmg3.ts.net domain=ts.net ip=100.75.99.43 serial=C79KMG3 winpe=false dns_suffixes=4 ipv4_count=3 ipv6_count=1
+[2026-03-14T22:20:16Z] - [INFO] - resolving variables for provisioner name=mecm
+[2026-03-14T22:20:16Z] - [INFO] - provisioner resolved name=mecm commonName=c79kmg3 dnsNames=5 ips=4
+[2026-03-14T22:20:16Z] - [INFO] - resolving variables for provisioner name=mecm-server
+[2026-03-14T22:20:16Z] - [INFO] - provisioner resolved name=mecm-server commonName=c79kmg3 dnsNames=5 ips=4
+[2026-03-14T22:20:16Z] - [INFO] - config loaded path=samples\config.json provisioners=2
+[2026-03-14T22:20:16Z] - [INFO] - run-once mode: loaded configuration provisioners=2
+[2026-03-14T22:20:16Z] - [INFO] - state database opened path=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\state\stepcaagent.db mode=wal
+[2026-03-14T22:20:16Z] - [INFO] - creating CA client (SDK) url=https://prod.pki.gracesolution.info:9100 certsDir=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates
+[2026-03-14T22:20:16Z] - [INFO] - loaded existing root CA path=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates\root\root.pem
+[2026-03-14T22:20:16Z] - [INFO] - CA client created (SDK) url=https://prod.pki.gracesolution.info:9100
+[2026-03-14T22:20:16Z] - [INFO] - checking if root CA needs refresh
+[2026-03-14T22:20:16Z] - [INFO] - root CA expiry check notAfter=2036-03-06 20:14:10 +0000 UTC withinDuration=720h0m0s expiring=false
+[2026-03-14T22:20:16Z] - [INFO] - root CA is still valid, no refresh needed
+[2026-03-14T22:20:16Z] - [INFO] - starting reconciliation cycle provisioners=2
+[2026-03-14T22:20:16Z] - [INFO] - certificate paths resolved provisioner=mecm cert=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates\mecm\certificate.pem key=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates\mecm\private.key chain=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates\mecm\chain.pem
+[2026-03-14T22:20:16Z] - [INFO] - provisioner not due yet, health check passed provisioner=mecm nextScheduled=2026-11-13 02:21:56 +0000 UTC remaining=5836h1m39.508097s
+[2026-03-14T22:20:16Z] - [INFO] - certificate paths resolved provisioner=mecm-server cert=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates\mecm-server\certificate.pem key=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates\mecm-server\private.key chain=C:\Users\Alphaeus.Mote\GitHub\StepCAAgent\binaries\data\certificates\mecm-server\chain.pem
+[2026-03-14T22:20:16Z] - [INFO] - provisioner not due yet, health check passed provisioner=mecm-server nextScheduled=2026-11-13 02:21:56 +0000 UTC remaining=5836h1m39.506092s
+[2026-03-14T22:20:16Z] - [INFO] - reconciliation cycle complete
+[2026-03-14T22:20:16Z] - [INFO] - run-once mode: reconciliation complete, exiting

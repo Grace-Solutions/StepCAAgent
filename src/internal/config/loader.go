@@ -260,8 +260,11 @@ func GenerateSample() ([]byte, error) {
 // It contains auto-detected device identifiers so the server can
 // build a device-specific configuration.
 type webhookPayload struct {
-	CN   string   `json:"cn"`
-	SANs []string `json:"sans"`
+	CN            string   `json:"cn"`
+	SANs          []string `json:"sans"`
+	OSName        string   `json:"osName,omitempty"`
+	OSVersion     string   `json:"osVersion,omitempty"`
+	OSProductType string   `json:"osProductType,omitempty"` // "Server" or "Workstation"
 }
 
 // LoadFromURL downloads config from a URL and parses it entirely in memory.
@@ -300,7 +303,9 @@ func LoadFromURL(url, method, header, token, destPath string) (*Root, error) {
 		}
 		log.Info("webhook mode: sending device identifiers",
 			"cn", payload.CN,
-			"sans", len(payload.SANs))
+			"sans", len(payload.SANs),
+			"osName", payload.OSName,
+			"osProductType", payload.OSProductType)
 		reqBody = bytes.NewReader(jsonBytes)
 	}
 
@@ -376,8 +381,11 @@ func buildWebhookPayload() (*webhookPayload, error) {
 	sans = append(sans, result.IPAddresses...)
 
 	return &webhookPayload{
-		CN:   cn,
-		SANs: sans,
+		CN:            cn,
+		SANs:          sans,
+		OSName:        result.OSName,
+		OSVersion:     result.OSVersion,
+		OSProductType: result.OSProductType,
 	}, nil
 }
 

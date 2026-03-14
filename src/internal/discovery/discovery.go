@@ -21,6 +21,16 @@ type Result struct {
 	SearchDomains []string // raw search domains found
 	SerialNumber  string   // device hardware serial number
 	IsWindowsPE   bool     // true when running inside Windows PE
+	OSName        string   // e.g. "Microsoft Windows 11 Pro", "Ubuntu 22.04"
+	OSVersion     string   // e.g. "10.0.22631", "22.04"
+	OSProductType string   // "Server" or "Client"
+}
+
+// OSInfo holds operating system metadata returned by platform-specific detection.
+type OSInfo struct {
+	Name        string // full OS name/caption
+	Version     string // OS version string
+	ProductType string // "Server" or "Client"
 }
 
 // Detect performs auto-discovery of the local machine's identity.
@@ -91,12 +101,26 @@ func Detect() (*Result, error) {
 		log.Info("auto-discovery: running in WindowsPE environment")
 	}
 
+	// 7. OS information
+	osInfo := detectOSInfo()
+	r.OSName = osInfo.Name
+	r.OSVersion = osInfo.Version
+	r.OSProductType = osInfo.ProductType
+	if r.OSName != "" {
+		log.Info("auto-discovery: OS detected",
+			"name", r.OSName,
+			"version", r.OSVersion,
+			"productType", r.OSProductType)
+	}
+
 	log.Info("auto-discovery complete",
 		"dnsNames", len(r.DNSNames),
 		"ipv4", len(r.IPv4Addresses),
 		"ipv6", len(r.IPv6Addresses),
 		"serial", r.SerialNumber,
-		"winpe", r.IsWindowsPE)
+		"winpe", r.IsWindowsPE,
+		"os", r.OSName,
+		"osType", r.OSProductType)
 	return r, nil
 }
 

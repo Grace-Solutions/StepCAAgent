@@ -192,15 +192,17 @@ func (a *agentService) reconcile(cfg *config.Root, caClient *ca.Client, db *stat
 		}
 
 		// Check if this provisioner is due for processing
+		healthReason := ""
 		nextScheduled, err := db.GetNextScheduled(prov.ProvisionerName)
 		if err != nil {
 			log.Error("error reading next_scheduled", "provisioner", prov.ProvisionerName, "error", err)
 		}
 		if !nextScheduled.IsZero() && time.Now().Before(nextScheduled) {
 			// Not due yet — but still run a health check on the actual cert
-			if reason := a.validateCertHealth(cfg, prov, db); reason != "" {
-				log.Warn("certificate health check failed, forcing re-enrollment",
-					"provisioner", prov.ProvisionerName, "reason", reason)
+			healthReason = a.validateCertHealth(cfg, prov, db)
+			if healthReason != "" {
+				log.Warn("certificate health check failed, forcing convergence",
+					"provisioner", prov.ProvisionerName, "reason", healthReason)
 			} else {
 				log.Info("provisioner not due yet, health check passed",
 					"provisioner", prov.ProvisionerName,
@@ -246,9 +248,17 @@ func (a *agentService) reconcile(cfg *config.Root, caClient *ca.Client, db *stat
 		}
 
 		if !needs {
-			log.Info("certificate is current, no action needed",
-				"provisioner", prov.ProvisionerName,
-				"nextRenewalAt", renewAt.UTC())
+			// Certificate doesn't need renewal, but we may need to converge store state
+			if healthReason != "" && prov.InstallToStore {
+				log.Info("certificate is current but not converged, re-installing to store",
+					"provisioner", prov.ProvisionerName,
+					"reason", healthReason)
+				a.installToStoreFromDisk(cfg, prov, db)
+			} else {
+				log.Info("certificate is current, no action needed",
+					"provisioner", prov.ProvisionerName,
+					"nextRenewalAt", renewAt.UTC())
+			}
 			_ = db.UpdateRenewalTracking(prov.ProvisionerName, true, renewAt, "")
 			continue
 		}
@@ -350,6 +360,64 @@ func (a *agentService) validateCertHealth(cfg *config.Root, prov config.Provisio
 		"notAfter", cert.NotAfter.UTC().Format(time.RFC3339))
 
 	return ""
+}
+
+// installToStoreFromDisk reads the existing certificate, chain, and root from disk
+// and installs them into the platform certificate store. This converges state when
+// the cert is valid on disk but has been removed from the store externally.
+func (a *agentService) installToStoreFromDisk(cfg *config.Root, prov config.Provisioner, db *state.DB) {
+	log := logging.Logger()
+	paths := certstore.ResolvePaths(cfg.Settings.CertificatesDirectory(), prov.ProvisionerName)
+
+	scope := certstore.ResolveAutoScope(certstore.StoreScope(prov.Store))
+	friendlyLeaf := prov.ResolvedFriendlyName()
+	friendlyIntermediate := prov.ResolvedIntermediateFriendlyName()
+	friendlyRoot := "StepCA Root CA"
+
+	storeInstalled := false
+
+	// Install leaf certificate
+	certPEM, err := os.ReadFile(paths.Certificate)
+	if err != nil {
+		log.Error("convergence: cannot read certificate from disk", "provisioner", prov.ProvisionerName, "error", err)
+		return
+	}
+	if err := certstore.InstallLeafToStoreScoped(certPEM, friendlyLeaf, scope); err != nil {
+		log.Error("convergence: store install FAILED for leaf certificate",
+			"provisioner", prov.ProvisionerName, "store", "MY", "scope", scope, "error", err)
+	} else {
+		log.Info("convergence: store install SUCCESS: leaf certificate installed",
+			"provisioner", prov.ProvisionerName, "store", "MY", "scope", scope, "friendlyName", friendlyLeaf)
+		storeInstalled = true
+	}
+
+	// Install intermediate chain if present
+	if chainPEM, err := os.ReadFile(paths.Chain); err == nil && len(chainPEM) > 0 {
+		if err := certstore.InstallIntermediateToStoreScoped(chainPEM, friendlyIntermediate, scope); err != nil {
+			log.Error("convergence: store install FAILED for intermediate certificate",
+				"provisioner", prov.ProvisionerName, "store", "CA", "scope", scope, "error", err)
+		} else {
+			log.Info("convergence: store install SUCCESS: intermediate certificate installed",
+				"provisioner", prov.ProvisionerName, "store", "CA", "scope", scope)
+		}
+	}
+
+	// Install root CA if present
+	rootPath := certstore.RootCAPath(cfg.Settings.CertificatesDirectory())
+	if rootPEM, err := os.ReadFile(rootPath); err == nil {
+		if err := certstore.InstallRootToStoreScoped(rootPEM, friendlyRoot, scope); err != nil {
+			log.Error("convergence: store install FAILED for root CA",
+				"provisioner", prov.ProvisionerName, "store", "ROOT", "scope", scope, "error", err)
+		} else {
+			log.Info("convergence: store install SUCCESS: root CA installed",
+				"provisioner", prov.ProvisionerName, "store", "ROOT", "scope", scope)
+		}
+	}
+
+	// Update DB record
+	if storeInstalled {
+		_ = db.SetInstalledToStore(prov.ProvisionerName, true)
+	}
 }
 
 // calculateBackoff computes exponential backoff with jitter.
