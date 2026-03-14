@@ -16,6 +16,7 @@
             "installToStore": true,
             "store": "localmachine",
             "friendlyName": "auto",
+            "wildcard": false,
             "subject": {
                 "commonName": "auto",
                 "dnsNames": ["auto"],
@@ -32,6 +33,7 @@
             "installToStore": false,
             "store": "currentuser",
             "friendlyName": "My Custom TLS Cert",
+            "wildcard": false,
             "subject": {
                 "commonName": "auto",
                 "dnsNames": ["auto"],

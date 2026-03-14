@@ -83,7 +83,8 @@ type Provisioner struct {
 	Enabled         bool         `json:"enabled"`
 	InstallToStore  bool         `json:"installToStore"`          // if true, import cert into platform certificate store
 	Store           string       `json:"store,omitempty"`         // store scope: "localmachine" (default), "currentuser", "both", or "auto"
-	FriendlyName    string       `json:"friendlyName,omitempty"`  // display name in cert store; "auto" (default) = "StepCA - <provisionerName>"
+	FriendlyName    string       `json:"friendlyName,omitempty"`  // display name in cert store; "auto" (default) = provisionerName
+	Wildcard        bool         `json:"wildcard,omitempty"`      // if true + dnsNames contains "auto", adds *.suffix for each DNS suffix
 	Subject         Subject      `json:"subject"`
 	Key             Key          `json:"key"`
 	Renewal         Renewal      `json:"renewal"`
@@ -94,10 +95,10 @@ type Provisioner struct {
 }
 
 // ResolvedFriendlyName returns the friendly name to use in the certificate store.
-// If FriendlyName is empty or "auto", returns "StepCA - <provisionerName>".
+// If FriendlyName is empty or "auto", returns the provisionerName as-is.
 func (p Provisioner) ResolvedFriendlyName() string {
 	if p.FriendlyName == "" || p.FriendlyName == "auto" {
-		return fmt.Sprintf("StepCA - %s", p.ProvisionerName)
+		return p.ProvisionerName
 	}
 	return p.FriendlyName
 }

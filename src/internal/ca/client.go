@@ -9,6 +9,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/hex"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"net/http"
@@ -80,43 +81,120 @@ func (c *Client) sdkClientOpts() []stepca.ClientOption {
 	return []stepca.ClientOption{stepca.WithInsecure()}
 }
 
-// FetchRootCertificate downloads the root certificate via the SDK.
-// If a fingerprint is configured it is used for verification; otherwise
-// the root is fetched insecurely (TOFU).
+// FetchRootCertificate downloads the root certificate from the CA.
+// If a fingerprint is configured it uses the SDK's /root/{fingerprint} endpoint.
+// Otherwise it tries the SDK's TOFU flow, and falls back to a direct insecure
+// GET to /roots (which returns all root CAs without needing a fingerprint).
 func (c *Client) FetchRootCertificate() ([]byte, error) {
 	log := logging.Logger()
 	log.Info("fetching root certificate from CA", "url", c.BaseURL)
 
 	// Use an insecure SDK client for the initial root fetch
-	insecure, err := stepca.NewClient(c.BaseURL+"/", stepca.WithInsecure())
+	insecureClient, err := stepca.NewClient(c.BaseURL+"/", stepca.WithInsecure())
 	if err != nil {
 		return nil, fmt.Errorf("create insecure client for root fetch: %w", err)
 	}
 
-	// Get fingerprint — either configured or discovered via TOFU
-	fingerprint := c.Fingerprint
-	if fingerprint == "" {
-		fp, err := insecure.RootFingerprint()
+	// If a fingerprint is explicitly configured, use the SDK's /root/{fingerprint} endpoint.
+	if c.Fingerprint != "" {
+		rootResp, err := insecureClient.Root(c.Fingerprint)
 		if err != nil {
-			return nil, fmt.Errorf("discover root fingerprint (TOFU): %w", err)
+			return nil, fmt.Errorf("fetch root certificate: %w", err)
 		}
-		fingerprint = fp
-		log.Warn("no fingerprint configured — discovered via TOFU", "fingerprint", fingerprint)
+		rootPEM := pem.EncodeToMemory(&pem.Block{
+			Type:  "CERTIFICATE",
+			Bytes: rootResp.RootPEM.Raw,
+		})
+		log.Info("root certificate fetched (fingerprint)", "subject", rootResp.RootPEM.Subject, "bytes", len(rootPEM))
+		return rootPEM, nil
 	}
 
-	// Fetch the root using the fingerprint for verification
-	rootResp, err := insecure.Root(fingerprint)
+	// TOFU mode — try SDK RootFingerprint first
+	fp, err := insecureClient.RootFingerprint()
+	if err == nil {
+		log.Warn("no fingerprint configured — discovered via TOFU", "fingerprint", fp)
+		rootResp, err := insecureClient.Root(fp)
+		if err == nil {
+			rootPEM := pem.EncodeToMemory(&pem.Block{
+				Type:  "CERTIFICATE",
+				Bytes: rootResp.RootPEM.Raw,
+			})
+			log.Info("root certificate fetched (TOFU)", "subject", rootResp.RootPEM.Subject, "bytes", len(rootPEM))
+			return rootPEM, nil
+		}
+		log.Warn("SDK Root() failed after TOFU fingerprint, falling back to /roots", "error", err)
+	} else {
+		log.Warn("SDK RootFingerprint failed, falling back to /roots", "error", err)
+	}
+
+	// Fallback: fetch directly from /roots endpoint (no fingerprint needed)
+	rootPEM, err := c.fetchRootsInsecure()
 	if err != nil {
-		return nil, fmt.Errorf("fetch root certificate: %w", err)
+		return nil, fmt.Errorf("fetch roots (TOFU fallback): %w", err)
+	}
+	return rootPEM, nil
+}
+
+// fetchRootsInsecure performs an insecure HTTPS GET to the CA's /roots endpoint,
+// which returns a JSON response with a "certificates" array of PEM strings.
+// This is the TOFU fallback when SDK fingerprint discovery fails (common with
+// private CAs that use an intermediate for their TLS cert).
+func (c *Client) fetchRootsInsecure() ([]byte, error) {
+	log := logging.Logger()
+
+	url := c.BaseURL + "/roots"
+	log.Info("fetching roots via insecure GET", "url", url)
+
+	httpClient := &http.Client{
+		Timeout: 30 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
 	}
 
-	rootPEM := pem.EncodeToMemory(&pem.Block{
-		Type:  "CERTIFICATE",
-		Bytes: rootResp.RootPEM.Raw,
-	})
+	resp, err := httpClient.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("GET %s: %w", url, err)
+	}
+	defer resp.Body.Close()
 
-	log.Info("root certificate fetched", "subject", rootResp.RootPEM.Subject, "bytes", len(rootPEM))
-	return rootPEM, nil
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("GET %s returned HTTP %d", url, resp.StatusCode)
+	}
+
+	// Step CA /roots returns: {"crts": ["-----BEGIN CERTIFICATE-----\n..."]}
+	var rootsResp struct {
+		Crts []string `json:"crts"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&rootsResp); err != nil {
+		return nil, fmt.Errorf("decode /roots response: %w", err)
+	}
+
+	if len(rootsResp.Crts) == 0 {
+		return nil, fmt.Errorf("no root certificates returned from %s", url)
+	}
+
+	// Use the first root certificate
+	rootPEMStr := rootsResp.Crts[0]
+	block, _ := pem.Decode([]byte(rootPEMStr))
+	if block == nil {
+		return nil, fmt.Errorf("no PEM block in root certificate from /roots")
+	}
+
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("parse root from /roots: %w", err)
+	}
+
+	hash := sha256.Sum256(cert.Raw)
+	fp := hex.EncodeToString(hash[:])
+
+	log.Info("root certificate fetched via /roots",
+		"subject", cert.Subject,
+		"fingerprint", fp,
+		"bytes", len(rootPEMStr))
+
+	return []byte(rootPEMStr), nil
 }
 
 // VerifyFingerprint checks that the PEM root certificate matches the expected fingerprint.
@@ -239,7 +317,7 @@ func (c *Client) RevokeCertificate(serial, certPath string) error {
 	// Build mTLS HTTP client if we have the cert files
 	httpClient := &http.Client{Timeout: 30 * time.Second}
 	if certPath != "" {
-		keyPath := strings.TrimSuffix(certPath, ".crt") + ".key"
+		keyPath := filepath.Join(filepath.Dir(certPath), certstore.KeyFile)
 		tlsCert, err := tls.LoadX509KeyPair(certPath, keyPath)
 		if err != nil {
 			log.Warn("could not load cert for mTLS revocation, trying without", "error", err)

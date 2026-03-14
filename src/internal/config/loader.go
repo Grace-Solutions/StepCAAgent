@@ -70,11 +70,29 @@ func (r *Root) ResolveVariables() error {
 		p := &r.Provisioners[i]
 		log.Info("resolving variables for provisioner", "name", p.ProvisionerName)
 
+		// Check if dnsNames has "auto" before resolving (needed for wildcard)
+		dnsHadAuto := vars.HasAuto(p.Subject.DNSNames)
+
 		// CommonName
 		p.Subject.CommonName = ctx.ResolveCommonName(p.Subject.CommonName)
 
-		// DNS names
-		p.Subject.DNSNames = ctx.ResolveDNSNames(p.Subject.DNSNames)
+		// DNS names — when wildcard=true and dnsNames had "auto", replace
+		// the specific hostname-based SANs with only *.suffix entries.
+		if p.Wildcard && dnsHadAuto {
+			var wildcardNames []string
+			for _, suffix := range ctx.Auto.SearchDomains {
+				wildcardNames = append(wildcardNames, "*."+suffix)
+			}
+			// Keep any explicit (non-auto) entries the user added alongside "auto"
+			explicit := vars.StripAuto(p.Subject.DNSNames)
+			for i, v := range explicit {
+				explicit[i] = ctx.ExpandString(v)
+			}
+			p.Subject.DNSNames = discovery.MergeUnique(wildcardNames, explicit)
+			log.Info("wildcard SANs (replacing specific SANs)", "provisioner", p.ProvisionerName, "dnsNames", p.Subject.DNSNames)
+		} else {
+			p.Subject.DNSNames = ctx.ResolveDNSNames(p.Subject.DNSNames)
+		}
 
 		// IP addresses
 		p.Subject.IPAddresses = ctx.ResolveIPAddresses(p.Subject.IPAddresses)
