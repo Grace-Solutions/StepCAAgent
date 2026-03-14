@@ -46,6 +46,14 @@ func ResolvePaths(certsDir, provisionerName string) *Paths {
 	return p
 }
 
+// CertificateExists returns true if the certificate and private key files both
+// exist on disk. This is used to verify that the DB state matches reality.
+func (p *Paths) CertificateExists() bool {
+	_, certErr := os.Stat(p.Certificate)
+	_, keyErr := os.Stat(p.PrivateKey)
+	return certErr == nil && keyErr == nil
+}
+
 // EnsureDir creates the provisioner's certificate directory with restrictive permissions.
 func (p *Paths) EnsureDir() error {
 	log := logging.Logger()

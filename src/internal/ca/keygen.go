@@ -11,7 +11,6 @@ import (
 	"encoding/pem"
 	"fmt"
 	"net"
-	"os"
 
 	"github.com/GraceSolutions/StepCAAgent/internal/config"
 	"github.com/GraceSolutions/StepCAAgent/internal/logging"
@@ -73,8 +72,10 @@ func generateKey(keyCfg config.Key) (crypto.Signer, []byte, error) {
 	}
 }
 
-// createCSR creates a PEM-encoded CSR from the private key and subject config.
-func createCSR(key crypto.Signer, subj config.Subject) ([]byte, error) {
+// createCSRRaw creates a parsed *x509.CertificateRequest from the private key
+// and subject config. The SDK's api.NewCertificateRequest() wraps this for JSON
+// serialization in the /sign request.
+func createCSRRaw(key crypto.Signer, subj config.Subject) (*x509.CertificateRequest, error) {
 	log := logging.Logger()
 	log.Info("creating CSR", "commonName", subj.CommonName, "dnsNames", len(subj.DNSNames))
 
@@ -100,51 +101,12 @@ func createCSR(key crypto.Signer, subj config.Subject) ([]byte, error) {
 		return nil, fmt.Errorf("create CSR: %w", err)
 	}
 
-	csrPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: csrDER})
+	csr, err := x509.ParseCertificateRequest(csrDER)
+	if err != nil {
+		return nil, fmt.Errorf("parse CSR: %w", err)
+	}
+
 	log.Info("CSR created successfully")
-	return csrPEM, nil
-}
-
-// getAuthToken retrieves the authentication token/password for enrollment.
-func getAuthToken(auth config.Auth) (string, error) {
-	log := logging.Logger()
-	log.Info("retrieving auth token", "type", auth.Type)
-
-	switch auth.Type {
-	case "provisioner-password":
-		if auth.Password != "" {
-			return auth.Password, nil
-		}
-		if auth.TokenPath != "" {
-			data, err := os.ReadFile(auth.TokenPath)
-			if err != nil {
-				return "", fmt.Errorf("read token file %s: %w", auth.TokenPath, err)
-			}
-			return string(data), nil
-		}
-		return "", fmt.Errorf("provisioner-password: no password or tokenPath configured")
-
-	case "bootstrap-token":
-		if auth.TokenPath != "" {
-			data, err := os.ReadFile(auth.TokenPath)
-			if err != nil {
-				return "", fmt.Errorf("read token file %s: %w", auth.TokenPath, err)
-			}
-			return string(data), nil
-		}
-		return "", fmt.Errorf("bootstrap-token: no tokenPath configured")
-
-	default:
-		return "", fmt.Errorf("unsupported auth type: %s", auth.Type)
-	}
-}
-
-// parseCertPEM parses the first certificate from PEM data.
-func parseCertPEM(certPEM []byte) (*x509.Certificate, error) {
-	block, _ := pem.Decode(certPEM)
-	if block == nil {
-		return nil, fmt.Errorf("no PEM block found")
-	}
-	return x509.ParseCertificate(block.Bytes)
+	return csr, nil
 }
 

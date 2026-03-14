@@ -1,13 +1,10 @@
 package ca
 
 import (
-	"bytes"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/json"
 	"encoding/pem"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -19,63 +16,16 @@ import (
 	"github.com/GraceSolutions/StepCAAgent/internal/state"
 )
 
-// submitSignRequest sends a CSR to the CA's /sign endpoint.
-func (c *Client) submitSignRequest(csrPEM []byte, token string) (certPEM, chainPEM []byte, err error) {
-	log := logging.Logger()
-	url := c.BaseURL + "/sign"
-	log.Info("submitting sign request", "url", url)
-
-	reqBody := SignRequest{
-		CsrPEM: string(csrPEM),
-		OTT:    token,
-	}
-
-	body, err := json.Marshal(reqBody)
-	if err != nil {
-		return nil, nil, fmt.Errorf("marshal sign request: %w", err)
-	}
-
-	req, err := http.NewRequest("POST", url, bytes.NewReader(body))
-	if err != nil {
-		return nil, nil, fmt.Errorf("create sign request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.HTTPClient.Do(req)
-	if err != nil {
-		log.Error("sign request failed", "url", url, "error", err)
-		return nil, nil, fmt.Errorf("POST %s: %w", url, err)
-	}
-	defer resp.Body.Close()
-
-	respBody, _ := io.ReadAll(resp.Body)
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		log.Error("sign request returned error",
-			"url", url,
-			"httpStatus", resp.StatusCode,
-			"body", string(respBody))
-		return nil, nil, fmt.Errorf("POST %s returned HTTP %d: %s", url, resp.StatusCode, string(respBody))
-	}
-
-	var signResp SignResponse
-	if err := json.Unmarshal(respBody, &signResp); err != nil {
-		return nil, nil, fmt.Errorf("parse sign response: %w", err)
-	}
-
-	log.Info("sign request successful", "url", url, "httpStatus", resp.StatusCode)
-	return []byte(signResp.CrtPEM), []byte(signResp.CaPEM), nil
-}
-
-// RenewCertificate renews a certificate using mTLS with the existing cert/key.
+// RenewCertificate renews a certificate using mTLS with the existing cert/key
+// via the Smallstep SDK's Renew method.
 func (c *Client) RenewCertificate(prov config.Provisioner, db *state.DB) error {
 	log := logging.Logger()
-	log.Info("renewing certificate", "provisioner", prov.Name)
+	log.Info("renewing certificate (SDK)", "provisioner", prov.Name)
 
 	paths := certstore.ResolvePaths(c.CertsDir, prov.Name)
 
 	// Load existing cert and key for mTLS
-	cert, err := tls.LoadX509KeyPair(paths.Certificate, paths.PrivateKey)
+	tlsCert, err := tls.LoadX509KeyPair(paths.Certificate, paths.PrivateKey)
 	if err != nil {
 		log.Error("could not load existing cert/key for renewal",
 			"provisioner", prov.Name,
@@ -85,65 +35,52 @@ func (c *Client) RenewCertificate(prov config.Provisioner, db *state.DB) error {
 		return fmt.Errorf("load cert/key for renewal: %w", err)
 	}
 
-	// Build mTLS client
+	// Build mTLS transport for the SDK Renew call
 	tlsCfg := &tls.Config{
-		Certificates: []tls.Certificate{cert},
+		Certificates: []tls.Certificate{tlsCert},
 	}
 	if c.RootCAs != nil {
 		tlsCfg.RootCAs = c.RootCAs
 	}
+	tr := &http.Transport{TLSClientConfig: tlsCfg}
 
-	renewClient := &http.Client{
-		Timeout:   30 * time.Second,
-		Transport: &http.Transport{TLSClientConfig: tlsCfg},
-	}
-
-	// POST /renew
-	url := c.BaseURL + "/renew"
-	log.Info("submitting renewal request", "url", url)
-
-	resp, err := renewClient.Post(url, "application/json", nil)
+	signResp, err := c.SDK.Renew(tr)
 	if err != nil {
-		log.Error("renewal request failed", "url", url, "error", err)
+		log.Error("SDK renewal failed", "provisioner", prov.Name, "error", err)
 		if db != nil {
-			_ = db.RecordAuditEvent("renew_failed", prov.Name, fmt.Sprintf("POST %s: %v", url, err), "error")
+			_ = db.RecordAuditEvent("renew_failed", prov.Name, fmt.Sprintf("SDK renew: %v", err), "error")
 		}
-		return fmt.Errorf("POST %s: %w", url, err)
+		return fmt.Errorf("renew certificate for %s: %w", prov.Name, err)
 	}
-	defer resp.Body.Close()
+	log.Info("certificate renewed by CA", "provisioner", prov.Name)
 
-	respBody, _ := io.ReadAll(resp.Body)
+	// Extract PEM from the SDK response
+	certPEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "CERTIFICATE",
+		Bytes: signResp.ServerPEM.Raw,
+	})
 
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		log.Error("renewal returned error",
-			"url", url,
-			"httpStatus", resp.StatusCode,
-			"body", string(respBody))
-		if db != nil {
-			_ = db.RecordAuditEvent("renew_failed", prov.Name,
-				fmt.Sprintf("HTTP %d: %s", resp.StatusCode, string(respBody)), "error")
-		}
-		return fmt.Errorf("POST %s returned HTTP %d", url, resp.StatusCode)
-	}
-
-	var signResp SignResponse
-	if err := json.Unmarshal(respBody, &signResp); err != nil {
-		return fmt.Errorf("parse renewal response: %w", err)
+	var chainPEM []byte
+	if signResp.CaPEM.Certificate != nil {
+		chainPEM = pem.EncodeToMemory(&pem.Block{
+			Type:  "CERTIFICATE",
+			Bytes: signResp.CaPEM.Raw,
+		})
 	}
 
 	// Write renewed certificate
-	if err := paths.WriteCert([]byte(signResp.CrtPEM)); err != nil {
+	if err := paths.WriteCert(certPEM); err != nil {
 		return err
 	}
-	if signResp.CaPEM != "" {
-		if err := paths.WriteChain([]byte(signResp.CaPEM)); err != nil {
+	if len(chainPEM) > 0 {
+		if err := paths.WriteChain(chainPEM); err != nil {
 			return err
 		}
 	}
 
 	// Update state database
 	if db != nil {
-		renewed, _ := parseCertPEM([]byte(signResp.CrtPEM))
+		renewed := signResp.ServerPEM.Certificate
 		if renewed != nil {
 			_ = db.UpsertCertificate(state.CertRecord{
 				Name:        prov.Name,
@@ -209,13 +146,11 @@ func CalculateRenewalTime(cert *x509.Certificate, renewBefore string) time.Time 
 
 	rb := strings.ToLower(strings.TrimSpace(renewBefore))
 	if rb == "" || rb == "auto" {
-		// Auto: renew at 2/3 of the certificate lifetime
 		return cert.NotBefore.Add(lifetime * 2 / 3)
 	}
 
 	d, err := time.ParseDuration(renewBefore)
 	if err != nil {
-		// Invalid duration, fall back to auto (2/3 lifetime)
 		return cert.NotBefore.Add(lifetime * 2 / 3)
 	}
 

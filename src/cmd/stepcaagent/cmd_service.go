@@ -167,11 +167,18 @@ func (a *agentService) reconcile(cfg *config.Root, caClient *ca.Client, db *stat
 			log.Error("error reading next_scheduled", "provisioner", prov.Name, "error", err)
 		}
 		if !nextScheduled.IsZero() && time.Now().Before(nextScheduled) {
-			log.Info("provisioner not due yet, skipping",
-				"provisioner", prov.Name,
-				"nextScheduled", nextScheduled.UTC(),
-				"remaining", time.Until(nextScheduled))
-			continue
+			// Even if not due, verify certificate files actually exist on disk
+			paths := certstore.ResolvePaths(cfg.Settings.CertificatesDirectory(), prov.Name)
+			if !paths.CertificateExists() {
+				log.Warn("certificate files missing on disk despite DB schedule, forcing re-enrollment",
+					"provisioner", prov.Name)
+			} else {
+				log.Info("provisioner not due yet, skipping",
+					"provisioner", prov.Name,
+					"nextScheduled", nextScheduled.UTC(),
+					"remaining", time.Until(nextScheduled))
+				continue
+			}
 		}
 
 		log.Info("processing provisioner", "name", prov.Name)

@@ -1,5 +1,7 @@
-// Package ca provides the Step CA API client for bootstrap, enrollment,
-// and renewal operations.
+// Package ca provides the Step CA client for bootstrap, enrollment,
+// and renewal operations. It wraps the official Smallstep certificates
+// SDK (github.com/smallstep/certificates/ca) so that JWK provisioner
+// authentication, CSR signing, and mTLS renewal are handled correctly.
 package ca
 
 import (
@@ -7,37 +9,37 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/hex"
-	"encoding/json"
 	"encoding/pem"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	stepca "github.com/smallstep/certificates/ca"
+
 	"github.com/GraceSolutions/StepCAAgent/internal/certstore"
 	"github.com/GraceSolutions/StepCAAgent/internal/logging"
 	"github.com/GraceSolutions/StepCAAgent/internal/permissions"
 )
 
-// Client wraps HTTP interactions with a Step CA server.
+// Client wraps the Smallstep SDK client and adds local file management.
 type Client struct {
 	BaseURL     string
-	Fingerprint string // optional — set for manual fingerprint pinning
-	CertsDir    string // <base>/certificates
-	HTTPClient  *http.Client
-	RootCAs     *x509.CertPool
+	Fingerprint string          // optional — manual fingerprint pinning
+	CertsDir    string          // <base>/certificates
+	SDK         *stepca.Client  // SDK client for /sign, /renew, etc.
+	RootCAs     *x509.CertPool // loaded from the stored root CA PEM
 }
 
-// NewClient creates a new CA client. certsDir is the certificates base
-// directory (e.g., <base>/certificates). If a trusted root is already stored,
-// it will be loaded into the TLS config. Fingerprint is optional; when empty,
-// TOFU (Trust On First Use) mode is used and the fingerprint is computed and logged.
+// NewClient creates a new CA client backed by the Smallstep SDK.
+// certsDir is the certificates base directory (e.g., <base>/certificates).
+// If a trusted root is already stored on disk it is loaded and used for TLS.
+// Fingerprint is optional; when empty, TOFU mode is used.
 func NewClient(caURL, certsDir, fingerprint string) (*Client, error) {
 	log := logging.Logger()
-	log.Info("creating CA client", "url", caURL, "certsDir", certsDir)
+	log.Info("creating CA client (SDK)", "url", caURL, "certsDir", certsDir)
 
 	c := &Client{
 		BaseURL:     strings.TrimRight(caURL, "/"),
@@ -45,7 +47,10 @@ func NewClient(caURL, certsDir, fingerprint string) (*Client, error) {
 		CertsDir:    certsDir,
 	}
 
-	// Try loading existing root
+	// Build SDK client options
+	opts := c.sdkClientOpts()
+
+	// Try loading existing root into the pool for non-SDK operations
 	rootPath := certstore.RootCAPath(certsDir)
 	if data, err := os.ReadFile(rootPath); err == nil {
 		pool := x509.NewCertPool()
@@ -55,54 +60,63 @@ func NewClient(caURL, certsDir, fingerprint string) (*Client, error) {
 		}
 	}
 
-	c.HTTPClient = c.buildHTTPClient()
-	log.Info("CA client created", "url", caURL)
+	sdkClient, err := stepca.NewClient(c.BaseURL+"/", opts...)
+	if err != nil {
+		return nil, fmt.Errorf("create SDK client: %w", err)
+	}
+	c.SDK = sdkClient
+
+	log.Info("CA client created (SDK)", "url", caURL)
 	return c, nil
 }
 
-func (c *Client) buildHTTPClient() *http.Client {
-	tlsCfg := &tls.Config{}
-	if c.RootCAs != nil {
-		tlsCfg.RootCAs = c.RootCAs
-	} else {
-		// For initial bootstrap, skip TLS verify but validate fingerprint
-		tlsCfg.InsecureSkipVerify = true
+// sdkClientOpts returns the ClientOption slice for the SDK client.
+func (c *Client) sdkClientOpts() []stepca.ClientOption {
+	rootPath := certstore.RootCAPath(c.CertsDir)
+	if _, err := os.Stat(rootPath); err == nil {
+		return []stepca.ClientOption{stepca.WithRootFile(rootPath)}
 	}
-	return &http.Client{
-		Timeout:   30 * time.Second,
-		Transport: &http.Transport{TLSClientConfig: tlsCfg},
-	}
+	// No root on disk yet — bootstrap with insecure TLS (fingerprint verified later)
+	return []stepca.ClientOption{stepca.WithInsecure()}
 }
 
-// FetchRootCertificate downloads the root certificate from /root/{sha256}
-// or /roots.pem and verifies the fingerprint.
+// FetchRootCertificate downloads the root certificate via the SDK.
+// If a fingerprint is configured it is used for verification; otherwise
+// the root is fetched insecurely (TOFU).
 func (c *Client) FetchRootCertificate() ([]byte, error) {
 	log := logging.Logger()
 	log.Info("fetching root certificate from CA", "url", c.BaseURL)
 
-	// Try /roots.pem first (common Step CA endpoint)
-	url := c.BaseURL + "/roots.pem"
-	log.Info("requesting root certificate", "url", url)
-
-	resp, err := c.HTTPClient.Get(url)
+	// Use an insecure SDK client for the initial root fetch
+	insecure, err := stepca.NewClient(c.BaseURL+"/", stepca.WithInsecure())
 	if err != nil {
-		log.Error("failed to fetch root certificate", "url", url, "error", err)
-		return nil, fmt.Errorf("fetch root: GET %s: %w", url, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		log.Error("unexpected status fetching root", "url", url, "status", resp.StatusCode)
-		return nil, fmt.Errorf("fetch root: GET %s returned HTTP %d", url, resp.StatusCode)
+		return nil, fmt.Errorf("create insecure client for root fetch: %w", err)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	// Get fingerprint — either configured or discovered via TOFU
+	fingerprint := c.Fingerprint
+	if fingerprint == "" {
+		fp, err := insecure.RootFingerprint()
+		if err != nil {
+			return nil, fmt.Errorf("discover root fingerprint (TOFU): %w", err)
+		}
+		fingerprint = fp
+		log.Warn("no fingerprint configured — discovered via TOFU", "fingerprint", fingerprint)
+	}
+
+	// Fetch the root using the fingerprint for verification
+	rootResp, err := insecure.Root(fingerprint)
 	if err != nil {
-		return nil, fmt.Errorf("fetch root: read body: %w", err)
+		return nil, fmt.Errorf("fetch root certificate: %w", err)
 	}
 
-	log.Info("root certificate fetched", "bytes", len(body))
-	return body, nil
+	rootPEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "CERTIFICATE",
+		Bytes: rootResp.RootPEM.Raw,
+	})
+
+	log.Info("root certificate fetched", "subject", rootResp.RootPEM.Subject, "bytes", len(rootPEM))
+	return rootPEM, nil
 }
 
 // VerifyFingerprint checks that the PEM root certificate matches the expected fingerprint.
@@ -123,7 +137,6 @@ func VerifyFingerprint(rootPEM []byte, expected string) error {
 	hash := sha256.Sum256(cert.Raw)
 	actual := "SHA256:" + strings.ToUpper(hex.EncodeToString(hash[:]))
 
-	// Normalize expected
 	exp := strings.ToUpper(strings.TrimSpace(expected))
 	if !strings.HasPrefix(exp, "SHA256:") {
 		exp = "SHA256:" + exp
@@ -153,13 +166,12 @@ func (c *Client) TrustRoot() error {
 			return err
 		}
 	} else {
-		log.Warn("no fingerprint configured, skipping verification (TOFU mode)")
+		log.Warn("no fingerprint configured, TOFU verification used")
 	}
 
 	// Store the root certificate
 	rootPath := certstore.RootCAPath(c.CertsDir)
 
-	// Ensure the certificates directory exists
 	dir := filepath.Dir(rootPath)
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return fmt.Errorf("create certs dir: %w", err)
@@ -170,11 +182,17 @@ func (c *Client) TrustRoot() error {
 	}
 	_ = permissions.EnforceRestrictive(rootPath)
 
-	// Reload the client with the new root
+	// Reload with the new root
 	pool := x509.NewCertPool()
 	pool.AppendCertsFromPEM(rootPEM)
 	c.RootCAs = pool
-	c.HTTPClient = c.buildHTTPClient()
+
+	// Recreate SDK client with the new root
+	sdkClient, err := stepca.NewClient(c.BaseURL+"/", stepca.WithRootFile(rootPath))
+	if err != nil {
+		return fmt.Errorf("recreate SDK client with new root: %w", err)
+	}
+	c.SDK = sdkClient
 
 	log.Info("root CA trusted and stored", "path", rootPath)
 	return nil
@@ -209,80 +227,7 @@ func (c *Client) IsRootExpiring(within time.Duration) (bool, error) {
 	return expiring, nil
 }
 
-// ProvisionerClaims holds the duration limits from a Step CA provisioner.
-type ProvisionerClaims struct {
-	MinTLSCertDuration     time.Duration
-	MaxTLSCertDuration     time.Duration
-	DefaultTLSCertDuration time.Duration
-}
-
-// FetchProvisionerClaims queries the CA's /provisioners endpoint and returns
-// the claims (duration limits) for the named provisioner.
-func (c *Client) FetchProvisionerClaims(provisionerName string) (*ProvisionerClaims, error) {
-	log := logging.Logger()
-	url := c.BaseURL + "/provisioners"
-	log.Info("fetching provisioner claims", "url", url, "provisioner", provisionerName)
-
-	resp, err := c.HTTPClient.Get(url)
-	if err != nil {
-		log.Error("failed to fetch provisioners", "url", url, "error", err)
-		return nil, fmt.Errorf("GET %s: %w", url, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		log.Error("unexpected status fetching provisioners", "url", url, "httpStatus", resp.StatusCode)
-		return nil, fmt.Errorf("GET %s returned HTTP %d", url, resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("read provisioners response: %w", err)
-	}
-
-	// Step CA returns {"provisioners": [{...}, ...]}
-	var result struct {
-		Provisioners []struct {
-			Name   string `json:"name"`
-			Claims struct {
-				MinTLSCertDuration     string `json:"minTLSCertDuration"`
-				MaxTLSCertDuration     string `json:"maxTLSCertDuration"`
-				DefaultTLSCertDuration string `json:"defaultTLSCertDuration"`
-			} `json:"claims"`
-		} `json:"provisioners"`
-	}
-
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("parse provisioners response: %w", err)
-	}
-
-	for _, p := range result.Provisioners {
-		if p.Name == provisionerName {
-			claims := &ProvisionerClaims{}
-			if d, err := time.ParseDuration(p.Claims.MinTLSCertDuration); err == nil {
-				claims.MinTLSCertDuration = d
-			}
-			if d, err := time.ParseDuration(p.Claims.MaxTLSCertDuration); err == nil {
-				claims.MaxTLSCertDuration = d
-			}
-			if d, err := time.ParseDuration(p.Claims.DefaultTLSCertDuration); err == nil {
-				claims.DefaultTLSCertDuration = d
-			}
-			log.Info("provisioner claims fetched",
-				"provisioner", provisionerName,
-				"minDuration", claims.MinTLSCertDuration,
-				"maxDuration", claims.MaxTLSCertDuration,
-				"defaultDuration", claims.DefaultTLSCertDuration)
-			return claims, nil
-		}
-	}
-
-	log.Warn("provisioner not found in CA response, using defaults", "provisioner", provisionerName)
-	return nil, nil
-}
-
 // RevokeCertificate revokes a certificate by serial number using mTLS.
-// certPath is used to load the cert+key for mTLS authentication.
 func (c *Client) RevokeCertificate(serial, certPath string) error {
 	log := logging.Logger()
 	log.Info("revoking certificate", "serial", serial)
@@ -291,8 +236,8 @@ func (c *Client) RevokeCertificate(serial, certPath string) error {
 		return fmt.Errorf("revoke: serial number is required")
 	}
 
-	// Build mTLS client if we have the cert files
-	httpClient := c.HTTPClient
+	// Build mTLS HTTP client if we have the cert files
+	httpClient := &http.Client{Timeout: 30 * time.Second}
 	if certPath != "" {
 		keyPath := strings.TrimSuffix(certPath, ".crt") + ".key"
 		tlsCert, err := tls.LoadX509KeyPair(certPath, keyPath)
@@ -303,14 +248,10 @@ func (c *Client) RevokeCertificate(serial, certPath string) error {
 				Certificates: []tls.Certificate{tlsCert},
 				RootCAs:      c.RootCAs,
 			}
-			httpClient = &http.Client{
-				Timeout:   30 * time.Second,
-				Transport: &http.Transport{TLSClientConfig: tlsCfg},
-			}
+			httpClient.Transport = &http.Transport{TLSClientConfig: tlsCfg}
 		}
 	}
 
-	// Step CA revoke endpoint: POST /1.0/revoke
 	payload := fmt.Sprintf(`{"serial":"%s","reasonCode":0}`, serial)
 	url := c.BaseURL + "/1.0/revoke"
 
@@ -320,10 +261,8 @@ func (c *Client) RevokeCertificate(serial, certPath string) error {
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
-
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("revoke: POST %s returned HTTP %d: %s", url, resp.StatusCode, string(body))
+		return fmt.Errorf("revoke: POST %s returned HTTP %d", url, resp.StatusCode)
 	}
 
 	log.Info("certificate revoked successfully", "serial", serial)
@@ -337,7 +276,6 @@ func (c *Client) RefreshRoot(within time.Duration) error {
 
 	expiring, err := c.IsRootExpiring(within)
 	if err != nil {
-		// Root might not exist yet
 		log.Warn("could not check root expiry, attempting trust", "error", err)
 		return c.TrustRoot()
 	}

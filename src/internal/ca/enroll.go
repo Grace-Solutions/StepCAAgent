@@ -1,33 +1,50 @@
 package ca
 
 import (
+	"encoding/pem"
 	"fmt"
+	"os"
+
+	stepca "github.com/smallstep/certificates/ca"
 
 	"github.com/GraceSolutions/StepCAAgent/internal/certstore"
 	"github.com/GraceSolutions/StepCAAgent/internal/config"
 	"github.com/GraceSolutions/StepCAAgent/internal/logging"
 	"github.com/GraceSolutions/StepCAAgent/internal/state"
+
+	"github.com/smallstep/certificates/api"
 )
 
-// SignRequest is the JSON body sent to Step CA's /sign endpoint.
-type SignRequest struct {
-	CsrPEM    string `json:"csr"`
-	OTT       string `json:"ott"`
-	NotAfter  string `json:"notAfter,omitempty"`
-	NotBefore string `json:"notBefore,omitempty"`
+// resolvePassword reads the provisioner password from the Auth config.
+// It supports inline passwords and file-based token paths.
+func resolvePassword(auth config.Auth) ([]byte, error) {
+	if auth.Password != "" {
+		return []byte(auth.Password), nil
+	}
+	if auth.TokenPath != "" {
+		data, err := os.ReadFile(auth.TokenPath)
+		if err != nil {
+			return nil, fmt.Errorf("read password/token file %s: %w", auth.TokenPath, err)
+		}
+		return data, nil
+	}
+	return nil, fmt.Errorf("no password or tokenPath configured for provisioner auth")
 }
 
-// SignResponse is the JSON body returned from /sign.
-type SignResponse struct {
-	CrtPEM string `json:"crt"`
-	CaPEM  string `json:"ca"`
+// caProvisionerName returns the Step CA provisioner name to use.
+// It prefers issuer.provisioner, falling back to the local provisioner name.
+func caProvisionerName(prov config.Provisioner) string {
+	if prov.Issuer.Provisioner != "" {
+		return prov.Issuer.Provisioner
+	}
+	return prov.Name
 }
 
-// EnrollCertificate generates a key, creates a CSR, and requests a certificate
-// from Step CA for the given provisioner config.
+// EnrollCertificate generates a key, creates a CSR, obtains a signed JWT
+// token via the Smallstep SDK provisioner, and submits a /sign request.
 func (c *Client) EnrollCertificate(prov config.Provisioner, db *state.DB) error {
 	log := logging.Logger()
-	log.Info("enrolling certificate", "provisioner", prov.Name)
+	log.Info("enrolling certificate (SDK)", "provisioner", prov.Name)
 
 	// 1. Generate private key
 	privKey, keyPEM, err := generateKey(prov.Key)
@@ -41,22 +58,49 @@ func (c *Client) EnrollCertificate(prov config.Provisioner, db *state.DB) error 
 	log.Info("private key generated", "provisioner", prov.Name, "algorithm", prov.Key.Algorithm)
 
 	// 2. Create CSR
-	csrPEM, err := createCSR(privKey, prov.Subject)
+	csrDER, err := createCSRRaw(privKey, prov.Subject)
 	if err != nil {
 		log.Error("CSR creation failed", "provisioner", prov.Name, "error", err)
 		return fmt.Errorf("create CSR for %s: %w", prov.Name, err)
 	}
 	log.Info("CSR created", "provisioner", prov.Name, "commonName", prov.Subject.CommonName)
 
-	// 3. Get token/password for authentication
-	token, err := getAuthToken(prov.Auth)
+	// 3. Resolve provisioner password and create SDK provisioner
+	password, err := resolvePassword(prov.Auth)
 	if err != nil {
-		log.Error("auth token retrieval failed", "provisioner", prov.Name, "error", err)
-		return fmt.Errorf("get auth token for %s: %w", prov.Name, err)
+		log.Error("password resolution failed", "provisioner", prov.Name, "error", err)
+		return fmt.Errorf("resolve password for %s: %w", prov.Name, err)
 	}
 
-	// 4. Submit sign request
-	certPEM, chainPEM, err := c.submitSignRequest(csrPEM, token)
+	caProvName := caProvisionerName(prov)
+	log.Info("creating SDK provisioner for token generation",
+		"caProvisioner", caProvName, "caURL", c.BaseURL)
+
+	sdkProv, err := stepca.NewProvisioner(caProvName, "", c.BaseURL+"/", password, c.sdkClientOpts()...)
+	if err != nil {
+		log.Error("SDK provisioner creation failed", "provisioner", prov.Name, "error", err)
+		if db != nil {
+			_ = db.RecordAuditEvent("enroll_failed", prov.Name, fmt.Sprintf("SDK provisioner: %v", err), "error")
+		}
+		return fmt.Errorf("create SDK provisioner for %s: %w", prov.Name, err)
+	}
+
+	// 4. Generate a signed JWT (OTT) for the subject and SANs
+	sans := collectSANs(prov.Subject)
+	token, err := sdkProv.Token(prov.Subject.CommonName, sans...)
+	if err != nil {
+		log.Error("JWT token generation failed", "provisioner", prov.Name, "error", err)
+		return fmt.Errorf("generate token for %s: %w", prov.Name, err)
+	}
+	log.Info("JWT token generated", "provisioner", prov.Name, "subject", prov.Subject.CommonName)
+
+	// 5. Build and submit sign request via SDK
+	signReq := &api.SignRequest{
+		CsrPEM: api.NewCertificateRequest(csrDER),
+		OTT:    token,
+	}
+
+	signResp, err := c.SDK.Sign(signReq)
 	if err != nil {
 		log.Error("certificate signing failed", "provisioner", prov.Name, "error", err)
 		if db != nil {
@@ -66,13 +110,26 @@ func (c *Client) EnrollCertificate(prov config.Provisioner, db *state.DB) error 
 	}
 	log.Info("certificate signed by CA", "provisioner", prov.Name)
 
-	// 5. Store certificate and key files
+	// 6. Extract PEM from the SDK response
+	certPEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "CERTIFICATE",
+		Bytes: signResp.ServerPEM.Raw,
+	})
+
+	var chainPEM []byte
+	if signResp.CaPEM.Certificate != nil {
+		chainPEM = pem.EncodeToMemory(&pem.Block{
+			Type:  "CERTIFICATE",
+			Bytes: signResp.CaPEM.Raw,
+		})
+	}
+
+	// 7. Store certificate and key files
 	paths := certstore.ResolvePaths(c.CertsDir, prov.Name)
 
 	if err := paths.EnsureDir(); err != nil {
 		return err
 	}
-
 	if err := paths.WriteCert(certPEM); err != nil {
 		return err
 	}
@@ -85,9 +142,9 @@ func (c *Client) EnrollCertificate(prov config.Provisioner, db *state.DB) error 
 		}
 	}
 
-	// 6. Update state database
+	// 8. Update state database
 	if db != nil {
-		cert, _ := parseCertPEM(certPEM)
+		cert := signResp.ServerPEM.Certificate
 		if cert != nil {
 			_ = db.UpsertCertificate(state.CertRecord{
 				Name:        prov.Name,
@@ -106,5 +163,15 @@ func (c *Client) EnrollCertificate(prov config.Provisioner, db *state.DB) error 
 	log.Info("certificate enrollment complete", "provisioner", prov.Name,
 		"certPath", paths.Certificate, "keyPath", paths.PrivateKey)
 	return nil
+}
+
+// collectSANs gathers all SANs from the Subject config for token generation.
+func collectSANs(subj config.Subject) []string {
+	var sans []string
+	sans = append(sans, subj.DNSNames...)
+	sans = append(sans, subj.IPAddresses...)
+	sans = append(sans, subj.URIs...)
+	sans = append(sans, subj.Emails...)
+	return sans
 }
 
