@@ -124,6 +124,96 @@ func IsCertInStore(certPEM []byte, storeName string) (bool, error) {
 	return false, nil
 }
 
+// RemoveCertFromStore removes a PEM-encoded certificate from the named
+// Windows certificate store, matched by serial number.
+func RemoveCertFromStore(certPEM []byte, storeName string) error {
+	log := logging.Logger()
+
+	block, _ := pem.Decode(certPEM)
+	if block == nil {
+		return fmt.Errorf("winstore: no PEM block found")
+	}
+
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return fmt.Errorf("winstore: parse certificate: %w", err)
+	}
+
+	log.Info("removing certificate from Windows store",
+		"store", storeName,
+		"subject", cert.Subject.CommonName,
+		"serial", cert.SerialNumber)
+
+	storeNameUTF16, err := windows.UTF16PtrFromString(storeName)
+	if err != nil {
+		return fmt.Errorf("winstore: UTF16 store name: %w", err)
+	}
+
+	store, err := windows.CertOpenSystemStore(0, storeNameUTF16)
+	if err != nil {
+		return fmt.Errorf("winstore: open store %q: %w", storeName, err)
+	}
+	defer windows.CertCloseStore(store, 0)
+
+	// Enumerate and delete matching certificates
+	removed := 0
+	var prev *windows.CertContext
+	for {
+		cur, err := windows.CertEnumCertificatesInStore(store, prev)
+		if err != nil {
+			break
+		}
+		if cur == nil {
+			break
+		}
+
+		derBytes := unsafe.Slice(cur.EncodedCert, cur.Length)
+		storeCert, parseErr := x509.ParseCertificate(derBytes)
+		if parseErr != nil {
+			prev = cur
+			continue
+		}
+
+		if storeCert.SerialNumber.Cmp(cert.SerialNumber) == 0 {
+			// CertDeleteCertificateFromStore frees the context and
+			// invalidates 'cur', so we must NOT use it as prev.
+			// Pass nil as prev on the next iteration to restart enumeration.
+			dupCtx := windows.CertDuplicateCertificateContext(cur)
+			if dupCtx == nil {
+				prev = cur
+				continue
+			}
+			if delErr := windows.CertDeleteCertificateFromStore(dupCtx); delErr != nil {
+				log.Error("failed to delete certificate from store",
+					"store", storeName,
+					"subject", storeCert.Subject.CommonName,
+					"error", delErr)
+			} else {
+				removed++
+				log.Info("certificate deleted from Windows store",
+					"store", storeName,
+					"subject", storeCert.Subject.CommonName,
+					"serial", storeCert.SerialNumber)
+			}
+			// Restart enumeration since the store was modified
+			prev = nil
+			continue
+		}
+		prev = cur
+	}
+
+	if removed == 0 {
+		log.Info("certificate not found in Windows store, nothing to remove",
+			"store", storeName,
+			"subject", cert.Subject.CommonName)
+	} else {
+		log.Info("certificate removal complete",
+			"store", storeName,
+			"removed", removed)
+	}
+	return nil
+}
+
 // InstallRootToStore installs a root CA certificate into the Trusted Root store.
 func InstallRootToStore(rootPEM []byte) error {
 	return InstallCertToStore(rootPEM, StoreRoot)
@@ -137,5 +227,20 @@ func InstallIntermediateToStore(chainPEM []byte) error {
 // InstallLeafToStore installs a leaf certificate into the Personal (My) store.
 func InstallLeafToStore(certPEM []byte) error {
 	return InstallCertToStore(certPEM, StoreMy)
+}
+
+// RemoveRootFromStore removes a root CA certificate from the Trusted Root store.
+func RemoveRootFromStore(rootPEM []byte) error {
+	return RemoveCertFromStore(rootPEM, StoreRoot)
+}
+
+// RemoveIntermediateFromStore removes an intermediate CA cert from the CA store.
+func RemoveIntermediateFromStore(chainPEM []byte) error {
+	return RemoveCertFromStore(chainPEM, StoreCA)
+}
+
+// RemoveLeafFromStore removes a leaf certificate from the Personal (My) store.
+func RemoveLeafFromStore(certPEM []byte) error {
+	return RemoveCertFromStore(certPEM, StoreMy)
 }
 

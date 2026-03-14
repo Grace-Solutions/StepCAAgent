@@ -8,42 +8,49 @@ import (
 
 // CertRecord represents a row in the certificates table.
 type CertRecord struct {
-	Name        string
-	Thumbprint  string
-	Serial      string
-	Subject     string
-	Issuer      string
-	NotBefore   time.Time
-	NotAfter    time.Time
-	StorageType string
-	StoragePath string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	Name             string
+	Thumbprint       string
+	Serial           string
+	Subject          string
+	Issuer           string
+	NotBefore        time.Time
+	NotAfter         time.Time
+	StorageType      string
+	StoragePath      string
+	InstalledToStore bool
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
 }
 
 // UpsertCertificate inserts or updates a certificate record.
 func (s *DB) UpsertCertificate(r CertRecord) error {
+	its := 0
+	if r.InstalledToStore {
+		its = 1
+	}
 	_, err := s.db.Exec(`
-		INSERT INTO certificates (name, thumbprint, serial, subject, issuer, not_before, not_after, storage_type, storage_path, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+		INSERT INTO certificates (name, thumbprint, serial, subject, issuer, not_before, not_after, storage_type, storage_path, installed_to_store, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
 		ON CONFLICT(name) DO UPDATE SET
 			thumbprint=excluded.thumbprint, serial=excluded.serial, subject=excluded.subject,
 			issuer=excluded.issuer, not_before=excluded.not_before, not_after=excluded.not_after,
 			storage_type=excluded.storage_type, storage_path=excluded.storage_path,
+			installed_to_store=excluded.installed_to_store,
 			updated_at=datetime('now')`,
 		r.Name, r.Thumbprint, r.Serial, r.Subject, r.Issuer,
 		r.NotBefore.Format(time.RFC3339), r.NotAfter.Format(time.RFC3339),
-		r.StorageType, r.StoragePath,
+		r.StorageType, r.StoragePath, its,
 	)
 	return err
 }
 
 // GetCertificate retrieves a certificate record by name.
 func (s *DB) GetCertificate(name string) (*CertRecord, error) {
-	row := s.db.QueryRow(`SELECT name, thumbprint, serial, subject, issuer, not_before, not_after, storage_type, storage_path FROM certificates WHERE name=?`, name)
+	row := s.db.QueryRow(`SELECT name, thumbprint, serial, subject, issuer, not_before, not_after, storage_type, storage_path, installed_to_store FROM certificates WHERE name=?`, name)
 	var r CertRecord
 	var nb, na string
-	err := row.Scan(&r.Name, &r.Thumbprint, &r.Serial, &r.Subject, &r.Issuer, &nb, &na, &r.StorageType, &r.StoragePath)
+	var its int
+	err := row.Scan(&r.Name, &r.Thumbprint, &r.Serial, &r.Subject, &r.Issuer, &nb, &na, &r.StorageType, &r.StoragePath, &its)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -52,12 +59,13 @@ func (s *DB) GetCertificate(name string) (*CertRecord, error) {
 	}
 	r.NotBefore, _ = time.Parse(time.RFC3339, nb)
 	r.NotAfter, _ = time.Parse(time.RFC3339, na)
+	r.InstalledToStore = its == 1
 	return &r, nil
 }
 
 // ListCertificates returns all certificate records.
 func (s *DB) ListCertificates() ([]CertRecord, error) {
-	rows, err := s.db.Query(`SELECT name, thumbprint, serial, subject, issuer, not_before, not_after, storage_type, storage_path FROM certificates ORDER BY name`)
+	rows, err := s.db.Query(`SELECT name, thumbprint, serial, subject, issuer, not_before, not_after, storage_type, storage_path, installed_to_store FROM certificates ORDER BY name`)
 	if err != nil {
 		return nil, err
 	}
@@ -67,11 +75,13 @@ func (s *DB) ListCertificates() ([]CertRecord, error) {
 	for rows.Next() {
 		var r CertRecord
 		var nb, na string
-		if err := rows.Scan(&r.Name, &r.Thumbprint, &r.Serial, &r.Subject, &r.Issuer, &nb, &na, &r.StorageType, &r.StoragePath); err != nil {
+		var its int
+		if err := rows.Scan(&r.Name, &r.Thumbprint, &r.Serial, &r.Subject, &r.Issuer, &nb, &na, &r.StorageType, &r.StoragePath, &its); err != nil {
 			return nil, err
 		}
 		r.NotBefore, _ = time.Parse(time.RFC3339, nb)
 		r.NotAfter, _ = time.Parse(time.RFC3339, na)
+		r.InstalledToStore = its == 1
 		result = append(result, r)
 	}
 	return result, rows.Err()
@@ -241,6 +251,39 @@ func (s *DB) Exec(query string, args ...interface{}) (sql.Result, error) {
 // Query exposes raw SQL queries for advanced use cases.
 func (s *DB) Query(query string, args ...interface{}) (*sql.Rows, error) {
 	return s.db.Query(query, args...)
+}
+
+// SetInstalledToStore updates the installed_to_store flag for a certificate.
+func (s *DB) SetInstalledToStore(name string, installed bool) error {
+	v := 0
+	if installed {
+		v = 1
+	}
+	_, err := s.db.Exec(`UPDATE certificates SET installed_to_store=?, updated_at=datetime('now') WHERE name=?`, v, name)
+	return err
+}
+
+// GetRootsInstalled returns whether the root CA was previously installed to the store.
+func (s *DB) GetRootsInstalled() (bool, error) {
+	var v int
+	err := s.db.QueryRow(`SELECT roots_installed FROM ca_status WHERE id=1`).Scan(&v)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return v == 1, nil
+}
+
+// SetRootsInstalled records whether the root CA is installed in the store.
+func (s *DB) SetRootsInstalled(installed bool) error {
+	v := 0
+	if installed {
+		v = 1
+	}
+	_, err := s.db.Exec(`UPDATE ca_status SET roots_installed=?, updated_at=datetime('now') WHERE id=1`, v)
+	return err
 }
 
 // DeleteCertificate removes a certificate record by name.

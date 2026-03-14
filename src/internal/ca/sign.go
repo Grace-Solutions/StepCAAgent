@@ -79,20 +79,41 @@ func (c *Client) RenewCertificate(prov config.Provisioner, db *state.DB) error {
 	}
 
 	// Install into Windows Certificate Store if enabled
+	storeInstalled := false
 	if prov.InstallToStore {
-		log.Info("installing renewed certificate into Windows store", "provisioner", prov.Name)
+		log.Info("store install requested, importing renewed certificate into Windows Certificate Store",
+			"provisioner", prov.Name,
+			"leafStore", "MY",
+			"intermediateStore", "CA",
+			"rootStore", "ROOT")
+
 		if err := certstore.InstallLeafToStore(certPEM); err != nil {
-			log.Error("failed to install renewed leaf cert to store", "provisioner", prov.Name, "error", err)
+			log.Error("store install FAILED for renewed leaf certificate",
+				"provisioner", prov.Name, "store", "MY", "error", err)
+		} else {
+			log.Info("store install SUCCESS: renewed leaf certificate installed",
+				"provisioner", prov.Name, "store", "MY")
+			storeInstalled = true
 		}
+
 		if len(chainPEM) > 0 {
 			if err := certstore.InstallIntermediateToStore(chainPEM); err != nil {
-				log.Error("failed to install intermediate to store", "provisioner", prov.Name, "error", err)
+				log.Error("store install FAILED for intermediate certificate",
+					"provisioner", prov.Name, "store", "CA", "error", err)
+			} else {
+				log.Info("store install SUCCESS: intermediate certificate installed",
+					"provisioner", prov.Name, "store", "CA")
 			}
 		}
+
 		rootPath := certstore.RootCAPath(c.CertsDir)
 		if rootPEM, err := os.ReadFile(rootPath); err == nil {
 			if err := certstore.InstallRootToStore(rootPEM); err != nil {
-				log.Error("failed to install root CA to store", "provisioner", prov.Name, "error", err)
+				log.Error("store install FAILED for root CA",
+					"provisioner", prov.Name, "store", "ROOT", "error", err)
+			} else {
+				log.Info("store install SUCCESS: root CA installed",
+					"provisioner", prov.Name, "store", "ROOT")
 			}
 		}
 	}
@@ -102,20 +123,23 @@ func (c *Client) RenewCertificate(prov config.Provisioner, db *state.DB) error {
 		renewed := signResp.ServerPEM.Certificate
 		if renewed != nil {
 			_ = db.UpsertCertificate(state.CertRecord{
-				Name:        prov.Name,
-				Serial:      renewed.SerialNumber.String(),
-				Subject:     renewed.Subject.CommonName,
-				Issuer:      renewed.Issuer.CommonName,
-				NotBefore:   renewed.NotBefore,
-				NotAfter:    renewed.NotAfter,
-				StorageType: prov.Storage.Type,
-				StoragePath: paths.Certificate,
+				Name:             prov.Name,
+				Serial:           renewed.SerialNumber.String(),
+				Subject:          renewed.Subject.CommonName,
+				Issuer:           renewed.Issuer.CommonName,
+				NotBefore:        renewed.NotBefore,
+				NotAfter:         renewed.NotAfter,
+				StorageType:      prov.Storage.Type,
+				StoragePath:      paths.Certificate,
+				InstalledToStore: storeInstalled,
 			})
 		}
 		_ = db.RecordAuditEvent("renewed", prov.Name, "certificate renewed successfully", "success")
 	}
 
-	log.Info("certificate renewal complete", "provisioner", prov.Name)
+	log.Info("certificate renewal complete",
+		"provisioner", prov.Name,
+		"installedToStore", storeInstalled)
 	return nil
 }
 

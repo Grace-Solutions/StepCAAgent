@@ -143,21 +143,41 @@ func (c *Client) EnrollCertificate(prov config.Provisioner, db *state.DB) error 
 	}
 
 	// 7b. Install into Windows Certificate Store if enabled
+	storeInstalled := false
 	if prov.InstallToStore {
-		log.Info("installing certificate into Windows store", "provisioner", prov.Name)
+		log.Info("store install requested, importing certificate into Windows Certificate Store",
+			"provisioner", prov.Name,
+			"leafStore", "MY",
+			"intermediateStore", "CA",
+			"rootStore", "ROOT")
+
 		if err := certstore.InstallLeafToStore(certPEM); err != nil {
-			log.Error("failed to install leaf cert to store", "provisioner", prov.Name, "error", err)
+			log.Error("store install FAILED for leaf certificate",
+				"provisioner", prov.Name, "store", "MY", "error", err)
+		} else {
+			log.Info("store install SUCCESS: leaf certificate installed",
+				"provisioner", prov.Name, "store", "MY")
+			storeInstalled = true
 		}
+
 		if len(chainPEM) > 0 {
 			if err := certstore.InstallIntermediateToStore(chainPEM); err != nil {
-				log.Error("failed to install intermediate to store", "provisioner", prov.Name, "error", err)
+				log.Error("store install FAILED for intermediate certificate",
+					"provisioner", prov.Name, "store", "CA", "error", err)
+			} else {
+				log.Info("store install SUCCESS: intermediate certificate installed",
+					"provisioner", prov.Name, "store", "CA")
 			}
 		}
-		// Install root CA into Trusted Root store
+
 		rootPath := certstore.RootCAPath(c.CertsDir)
 		if rootPEM, err := os.ReadFile(rootPath); err == nil {
 			if err := certstore.InstallRootToStore(rootPEM); err != nil {
-				log.Error("failed to install root CA to store", "provisioner", prov.Name, "error", err)
+				log.Error("store install FAILED for root CA",
+					"provisioner", prov.Name, "store", "ROOT", "error", err)
+			} else {
+				log.Info("store install SUCCESS: root CA installed",
+					"provisioner", prov.Name, "store", "ROOT")
 			}
 		}
 	}
@@ -167,21 +187,25 @@ func (c *Client) EnrollCertificate(prov config.Provisioner, db *state.DB) error 
 		cert := signResp.ServerPEM.Certificate
 		if cert != nil {
 			_ = db.UpsertCertificate(state.CertRecord{
-				Name:        prov.Name,
-				Serial:      cert.SerialNumber.String(),
-				Subject:     cert.Subject.CommonName,
-				Issuer:      cert.Issuer.CommonName,
-				NotBefore:   cert.NotBefore,
-				NotAfter:    cert.NotAfter,
-				StorageType: prov.Storage.Type,
-				StoragePath: paths.Certificate,
+				Name:             prov.Name,
+				Serial:           cert.SerialNumber.String(),
+				Subject:          cert.Subject.CommonName,
+				Issuer:           cert.Issuer.CommonName,
+				NotBefore:        cert.NotBefore,
+				NotAfter:         cert.NotAfter,
+				StorageType:      prov.Storage.Type,
+				StoragePath:      paths.Certificate,
+				InstalledToStore: storeInstalled,
 			})
 		}
 		_ = db.RecordAuditEvent("enrolled", prov.Name, "certificate enrolled successfully", "success")
 	}
 
-	log.Info("certificate enrollment complete", "provisioner", prov.Name,
-		"certPath", paths.Certificate, "keyPath", paths.PrivateKey)
+	log.Info("certificate enrollment complete",
+		"provisioner", prov.Name,
+		"certPath", paths.Certificate,
+		"keyPath", paths.PrivateKey,
+		"installedToStore", storeInstalled)
 	return nil
 }
 

@@ -101,14 +101,29 @@ func (a *agentService) run(ctx context.Context) {
 	} else {
 		log.Info("CA root trust established")
 
-		// Install root CA into Windows Trusted Root store if configured
+		// Reconcile root store state: detect installRoots flag transitions
+		rootPath := certstore.RootCAPath(cfg.Settings.CertificatesDirectory())
+		prevRootsInstalled, _ := db.GetRootsInstalled()
+
 		if cfg.Settings.Trust.InstallRoots {
-			rootPath := certstore.RootCAPath(cfg.Settings.CertificatesDirectory())
+			// Flag is ON → install root to store
 			if rootPEM, readErr := os.ReadFile(rootPath); readErr == nil {
 				if storeErr := certstore.InstallRootToStore(rootPEM); storeErr != nil {
-					log.Error("failed to install root CA to Windows store", "error", storeErr)
+					log.Error("store install FAILED for root CA", "store", "ROOT", "error", storeErr)
 				} else {
-					log.Info("root CA installed to Windows Trusted Root store")
+					log.Info("store install SUCCESS: root CA installed to Windows Trusted Root store")
+					_ = db.SetRootsInstalled(true)
+				}
+			}
+		} else if prevRootsInstalled {
+			// Flag changed from true → false: remove root from store
+			log.Info("installRoots changed to false, removing root CA from Windows Trusted Root store")
+			if rootPEM, readErr := os.ReadFile(rootPath); readErr == nil {
+				if storeErr := certstore.RemoveRootFromStore(rootPEM); storeErr != nil {
+					log.Error("store remove FAILED for root CA", "store", "ROOT", "error", storeErr)
+				} else {
+					log.Info("store remove SUCCESS: root CA removed from Windows Trusted Root store")
+					_ = db.SetRootsInstalled(false)
 				}
 			}
 		}
@@ -210,6 +225,33 @@ func (a *agentService) reconcile(cfg *config.Root, caClient *ca.Client, db *stat
 		}
 
 		log.Info("processing provisioner", "name", prov.Name)
+
+		// Detect installToStore flag transition: true → false means remove from store
+		certRec, _ := db.GetCertificate(prov.Name)
+		if certRec != nil && certRec.InstalledToStore && !prov.InstallToStore {
+			log.Info("installToStore changed to false, removing certificate from Windows store",
+				"provisioner", prov.Name)
+			paths := certstore.ResolvePaths(cfg.Settings.CertificatesDirectory(), prov.Name)
+			if leafPEM, readErr := os.ReadFile(paths.Certificate); readErr == nil {
+				if rmErr := certstore.RemoveLeafFromStore(leafPEM); rmErr != nil {
+					log.Error("store remove FAILED for leaf certificate",
+						"provisioner", prov.Name, "store", "MY", "error", rmErr)
+				} else {
+					log.Info("store remove SUCCESS: leaf certificate removed",
+						"provisioner", prov.Name, "store", "MY")
+				}
+			}
+			if chainPEM, readErr := os.ReadFile(paths.Chain); readErr == nil && len(chainPEM) > 0 {
+				if rmErr := certstore.RemoveIntermediateFromStore(chainPEM); rmErr != nil {
+					log.Error("store remove FAILED for intermediate certificate",
+						"provisioner", prov.Name, "store", "CA", "error", rmErr)
+				} else {
+					log.Info("store remove SUCCESS: intermediate certificate removed",
+						"provisioner", prov.Name, "store", "CA")
+				}
+			}
+			_ = db.SetInstalledToStore(prov.Name, false)
+		}
 
 		needs, renewAt, err := ca.NeedsRenewal(cfg.Settings.CertificatesDirectory(), prov)
 		if err != nil {
