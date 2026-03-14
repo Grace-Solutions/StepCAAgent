@@ -82,6 +82,7 @@ type Provisioner struct {
 	Name           string       `json:"name"`
 	Enabled        bool         `json:"enabled"`
 	InstallToStore bool         `json:"installToStore"`          // if true, import cert into platform certificate store
+	Store          string       `json:"store,omitempty"`         // store scope: "localmachine" (default), "currentuser", "both", or "auto"
 	CAProvisioner  string       `json:"caProvisioner,omitempty"` // provisioner name on the CA; defaults to Name if empty
 	FriendlyName   string       `json:"friendlyName,omitempty"`  // display name in cert store; "auto" (default) = "StepCA - <name>"
 	Subject        Subject      `json:"subject"`

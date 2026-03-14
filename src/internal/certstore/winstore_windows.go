@@ -329,9 +329,33 @@ func InstallIntermediateToStore(chainPEM []byte, friendlyName string) error {
 	return InstallCertToStore(chainPEM, StoreCA, friendlyName)
 }
 
+// InstallIntermediateToStoreScoped installs an intermediate CA cert into the CA store
+// with the given scope. If scope is ScopeBoth, installs into both stores.
+func InstallIntermediateToStoreScoped(chainPEM []byte, friendlyName string, scope StoreScope) error {
+	if scope == ScopeBoth {
+		if err := InstallCertToStoreScoped(chainPEM, StoreCA, friendlyName, ScopeLocalMachine); err != nil {
+			return fmt.Errorf("install intermediate (Local Machine): %w", err)
+		}
+		return InstallCertToStoreScoped(chainPEM, StoreCA, friendlyName, ScopeCurrentUser)
+	}
+	return InstallCertToStoreScoped(chainPEM, StoreCA, friendlyName, scope)
+}
+
 // InstallLeafToStore installs a leaf certificate into the Personal (My) store.
 func InstallLeafToStore(certPEM []byte, friendlyName string) error {
 	return InstallCertToStore(certPEM, StoreMy, friendlyName)
+}
+
+// InstallLeafToStoreScoped installs a leaf certificate into the Personal (My) store
+// with the given scope. If scope is ScopeBoth, installs into both stores.
+func InstallLeafToStoreScoped(certPEM []byte, friendlyName string, scope StoreScope) error {
+	if scope == ScopeBoth {
+		if err := InstallCertToStoreScoped(certPEM, StoreMy, friendlyName, ScopeLocalMachine); err != nil {
+			return fmt.Errorf("install leaf (Local Machine): %w", err)
+		}
+		return InstallCertToStoreScoped(certPEM, StoreMy, friendlyName, ScopeCurrentUser)
+	}
+	return InstallCertToStoreScoped(certPEM, StoreMy, friendlyName, scope)
 }
 
 // RemoveRootFromStore removes a root CA certificate from the Trusted Root store.

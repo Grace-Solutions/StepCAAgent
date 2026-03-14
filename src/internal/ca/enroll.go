@@ -143,41 +143,43 @@ func (c *Client) EnrollCertificate(prov config.Provisioner, db *state.DB) error 
 	// 7b. Install into platform certificate store if enabled
 	storeInstalled := false
 	if prov.InstallToStore {
+		scope := certstore.ResolveAutoScope(certstore.StoreScope(prov.Store))
 		friendlyLeaf := prov.ResolvedFriendlyName()
 		friendlyIntermediate := prov.ResolvedIntermediateFriendlyName()
 		friendlyRoot := "StepCA Root CA"
 
 		log.Info("store install requested, importing certificate into certificate store",
 			"provisioner", prov.Name,
-			"friendlyName", friendlyLeaf)
+			"friendlyName", friendlyLeaf,
+			"store", scope)
 
-		if err := certstore.InstallLeafToStore(certPEM, friendlyLeaf); err != nil {
+		if err := certstore.InstallLeafToStoreScoped(certPEM, friendlyLeaf, scope); err != nil {
 			log.Error("store install FAILED for leaf certificate",
-				"provisioner", prov.Name, "store", "MY", "error", err)
+				"provisioner", prov.Name, "store", "MY", "scope", scope, "error", err)
 		} else {
 			log.Info("store install SUCCESS: leaf certificate installed",
-				"provisioner", prov.Name, "store", "MY", "friendlyName", friendlyLeaf)
+				"provisioner", prov.Name, "store", "MY", "scope", scope, "friendlyName", friendlyLeaf)
 			storeInstalled = true
 		}
 
 		if len(chainPEM) > 0 {
-			if err := certstore.InstallIntermediateToStore(chainPEM, friendlyIntermediate); err != nil {
+			if err := certstore.InstallIntermediateToStoreScoped(chainPEM, friendlyIntermediate, scope); err != nil {
 				log.Error("store install FAILED for intermediate certificate",
-					"provisioner", prov.Name, "store", "CA", "error", err)
+					"provisioner", prov.Name, "store", "CA", "scope", scope, "error", err)
 			} else {
 				log.Info("store install SUCCESS: intermediate certificate installed",
-					"provisioner", prov.Name, "store", "CA")
+					"provisioner", prov.Name, "store", "CA", "scope", scope)
 			}
 		}
 
 		rootPath := certstore.RootCAPath(c.CertsDir)
 		if rootPEM, err := os.ReadFile(rootPath); err == nil {
-			if err := certstore.InstallRootToStore(rootPEM, friendlyRoot); err != nil {
+			if err := certstore.InstallRootToStoreScoped(rootPEM, friendlyRoot, scope); err != nil {
 				log.Error("store install FAILED for root CA",
-					"provisioner", prov.Name, "store", "ROOT", "error", err)
+					"provisioner", prov.Name, "store", "ROOT", "scope", scope, "error", err)
 			} else {
 				log.Info("store install SUCCESS: root CA installed",
-					"provisioner", prov.Name, "store", "ROOT")
+					"provisioner", prov.Name, "store", "ROOT", "scope", scope)
 			}
 		}
 	}

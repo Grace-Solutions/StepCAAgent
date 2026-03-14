@@ -122,6 +122,9 @@ func (r *Root) applyDefaults() error {
 
 	for i := range r.Provisioners {
 		p := &r.Provisioners[i]
+		if p.Store == "" {
+			p.Store = "localmachine"
+		}
 		if p.Key.Algorithm == "" {
 			p.Key.Algorithm = "EC"
 		}

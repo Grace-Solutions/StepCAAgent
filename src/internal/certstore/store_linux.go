@@ -148,8 +148,18 @@ func InstallIntermediateToStore(chainPEM []byte, friendlyName string) error {
 	return nil
 }
 
+// InstallIntermediateToStoreScoped is a no-op on Linux.
+func InstallIntermediateToStoreScoped(chainPEM []byte, friendlyName string, scope StoreScope) error {
+	return nil
+}
+
 // InstallLeafToStore is a no-op on Linux.
 func InstallLeafToStore(certPEM []byte, friendlyName string) error {
+	return nil
+}
+
+// InstallLeafToStoreScoped is a no-op on Linux.
+func InstallLeafToStoreScoped(certPEM []byte, friendlyName string, scope StoreScope) error {
 	return nil
 }
 

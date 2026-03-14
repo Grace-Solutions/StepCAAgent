@@ -39,8 +39,18 @@ func InstallIntermediateToStore(chainPEM []byte, friendlyName string) error {
 	return nil
 }
 
+// InstallIntermediateToStoreScoped is a no-op on unsupported platforms.
+func InstallIntermediateToStoreScoped(chainPEM []byte, friendlyName string, scope StoreScope) error {
+	return nil
+}
+
 // InstallLeafToStore is a no-op on unsupported platforms.
 func InstallLeafToStore(certPEM []byte, friendlyName string) error {
+	return nil
+}
+
+// InstallLeafToStoreScoped is a no-op on unsupported platforms.
+func InstallLeafToStoreScoped(certPEM []byte, friendlyName string, scope StoreScope) error {
 	return nil
 }
 
