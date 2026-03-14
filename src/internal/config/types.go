@@ -160,7 +160,7 @@ type Backoff struct {
 
 // Storage defines where the certificate and key are placed.
 // Paths are always derived from the base directory:
-// <base>/certificates/<provisioner>/certificate.crt, private.key, chain.crt
+// <base>/certificates/<provisioner>/certificate.pem, private.key, chain.pem
 type Storage struct {
 	Type        string          `json:"type"` // "filesystem", "store"
 	Permissions FilePermissions `json:"permissions"`

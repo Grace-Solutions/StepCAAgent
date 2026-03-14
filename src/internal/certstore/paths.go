@@ -13,12 +13,11 @@ import (
 
 const (
 	CertsDirName = "certificates"
-	CertFile     = "certificate.crt"
-	KeyFile      = "private.key"
-	ChainFile    = "chain.crt"
 	RootDir      = "root"
-	RootFile     = "root.crt"
 )
+
+// CertFile, KeyFile, ChainFile, and RootFile are defined in
+// paths_windows.go / paths_unix.go with platform-appropriate extensions.
 
 // Paths holds the resolved file paths for a provisioner's certificate files.
 type Paths struct {
@@ -73,7 +72,7 @@ func (p *Paths) EnsureDir() error {
 }
 
 // RootCAPath returns the path to the trusted root CA certificate
-// under the given certificates directory: <certsDir>/root/root.crt
+// under the given certificates directory: <certsDir>/root/<RootFile>
 func RootCAPath(certsDir string) string {
 	return filepath.Join(certsDir, RootDir, RootFile)
 }
