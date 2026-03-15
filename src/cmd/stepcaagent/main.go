@@ -45,6 +45,12 @@ func main() {
 				Value:   "GET",
 				EnvVars: []string{"STEPCAAGENT_CONFIG_METHOD"},
 			},
+			&cli.StringFlag{
+				Name:    "config-url-refresh-interval",
+				Usage:   "How often to re-fetch config from --config-url (e.g. 8h, 30m). Default: 8h. Set to 0 to disable.",
+				Value:   "8h",
+				EnvVars: []string{"STEPCAAGENT_CONFIG_URL_REFRESH_INTERVAL"},
+			},
 		},
 		Before: func(c *cli.Context) error {
 			c.App.Metadata["configPath"] = c.String("config")
@@ -52,6 +58,7 @@ func main() {
 			c.App.Metadata["configHeader"] = c.String("config-header")
 			c.App.Metadata["configToken"] = c.String("config-token")
 			c.App.Metadata["configMethod"] = c.String("config-method")
+			c.App.Metadata["configURLRefreshInterval"] = c.String("config-url-refresh-interval")
 			return nil
 		},
 		Commands: []*cli.Command{

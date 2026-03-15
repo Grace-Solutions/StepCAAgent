@@ -25,12 +25,13 @@ const maxRetries = 10 // After this many consecutive failures, halt until servic
 
 // agentService implements kardianos/service.Interface.
 type agentService struct {
-	configPath   string
-	configURL    string
-	configHeader string
-	configToken  string
-	configMethod string // "GET" (default) or "POST" (webhook mode)
-	cancel       context.CancelFunc
+	configPath              string
+	configURL               string
+	configHeader            string
+	configToken             string
+	configMethod            string        // "GET" (default) or "POST" (webhook mode)
+	configURLRefreshInterval time.Duration // how often to re-fetch config from URL (0 = disabled)
+	cancel                  context.CancelFunc
 }
 
 func (a *agentService) Start(s service.Service) error {
@@ -146,6 +147,18 @@ func (a *agentService) run(ctx context.Context) {
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
 
+	// 8. Config refresh timer (only when using URL-based config).
+	// Uses time.After for each cycle so we can re-jitter every time.
+	configRefreshEnabled := a.configURL != "" && a.configURLRefreshInterval > 0
+	var configRefreshC <-chan time.Time
+	if configRefreshEnabled {
+		jitteredInterval := applyJitter(a.configURLRefreshInterval)
+		log.Info("config refresh enabled",
+			"baseInterval", a.configURLRefreshInterval,
+			"jitteredInterval", jitteredInterval)
+		configRefreshC = time.After(jitteredInterval)
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -153,6 +166,21 @@ func (a *agentService) run(ctx context.Context) {
 			return
 		case <-ticker.C:
 			a.reconcile(cfg, caClient, db)
+		case <-configRefreshC:
+			log.Info("config refresh interval reached, re-fetching configuration from URL", "url", a.configURL)
+			newCfg, fetchErr := config.LoadFromURL(a.configURL, a.configMethod, a.configHeader, a.configToken, a.configPath)
+			if fetchErr != nil {
+				log.Error("config refresh failed, keeping current config", "error", fetchErr)
+			} else {
+				cfg = newCfg
+				log.Info("configuration refreshed successfully", "provisioners", len(cfg.Provisioners))
+				// Run reconciliation immediately with refreshed config
+				a.reconcile(cfg, caClient, db)
+			}
+			// Schedule next refresh with fresh jitter
+			jitteredInterval := applyJitter(a.configURLRefreshInterval)
+			log.Info("next config refresh scheduled", "jitteredInterval", jitteredInterval)
+			configRefreshC = time.After(jitteredInterval)
 		}
 	}
 }
@@ -442,6 +470,13 @@ func calculateBackoff(backoffCfg config.Backoff, retryCount int) time.Duration {
 	return time.Duration(backoff + jitter)
 }
 
+// applyJitter returns a duration with ±15% random jitter applied.
+func applyJitter(d time.Duration) time.Duration {
+	// jitter range: -15% to +15%
+	factor := 1.0 + (rand.Float64()*0.30 - 0.15)
+	return time.Duration(float64(d) * factor)
+}
+
 // cleanupStaleCerts revokes and removes certificates for provisioners
 // that are no longer present in the configuration.
 func (a *agentService) cleanupStaleCerts(cfg *config.Root, caClient *ca.Client, db *state.DB, activeNames map[string]bool) {
@@ -561,11 +596,41 @@ func serviceCommand() *cli.Command {
 				Name:  "run",
 				Usage: "Run in foreground (debug mode)",
 				Action: func(c *cli.Context) error {
-					return serviceRun(c.String("config"))
+					return serviceRun(c)
 				},
 			},
 		},
 	}
+}
+
+func getServiceFromContext(c *cli.Context) (service.Service, error) {
+	svc := &agentService{}
+
+	// Populate from CLI context metadata (set in main.go Before hook)
+	if c.App != nil && c.App.Metadata != nil {
+		if v, ok := c.App.Metadata["configPath"].(string); ok {
+			svc.configPath = v
+		}
+		if v, ok := c.App.Metadata["configURL"].(string); ok {
+			svc.configURL = v
+		}
+		if v, ok := c.App.Metadata["configHeader"].(string); ok {
+			svc.configHeader = v
+		}
+		if v, ok := c.App.Metadata["configToken"].(string); ok {
+			svc.configToken = v
+		}
+		if v, ok := c.App.Metadata["configMethod"].(string); ok {
+			svc.configMethod = v
+		}
+		if v, ok := c.App.Metadata["configURLRefreshInterval"].(string); ok && v != "" && v != "0" {
+			if d, err := time.ParseDuration(v); err == nil {
+				svc.configURLRefreshInterval = d
+			}
+		}
+	}
+
+	return service.New(svc, newServiceConfig())
 }
 
 func getService(configPath ...string) (service.Service, error) {
@@ -643,14 +708,14 @@ func serviceStop() error {
 	return nil
 }
 
-func serviceRun(configPath string) error {
+func serviceRun(c *cli.Context) error {
 	// Initialize logging for foreground mode (also write to stderr).
 	if err := logging.Init(logging.Config{ToStderr: true, Level: "debug"}); err != nil {
 		return fmt.Errorf("init logging: %w", err)
 	}
 	defer logging.Close()
 
-	s, err := getService(configPath)
+	s, err := getServiceFromContext(c)
 	if err != nil {
 		return fmt.Errorf("create service: %w", err)
 	}

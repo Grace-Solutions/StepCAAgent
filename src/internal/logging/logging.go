@@ -19,12 +19,20 @@ import (
 )
 
 const (
-	DefaultMaxFiles   = 3
-	DefaultMaxBytes   = 10 * 1024 * 1024 // 10 MB
-	DefaultLogName    = "stepcaagent.log"
-	DefaultFileMode   = 0600
-	DefaultDirMode    = 0700
+	DefaultMaxFiles = 3
+	DefaultMaxBytes = 10 * 1024 * 1024 // 10 MB
+	// Log files use date-based naming: stepcaagent.yyyy.mm.dd.log
+	logNamePrefix   = "stepcaagent."
+	logNameSuffix   = ".log"
+	logDateFormat   = "2006.01.02"
+	DefaultFileMode = 0600
+	DefaultDirMode  = 0700
 )
+
+// currentLogName returns the log file name for today.
+func currentLogName() string {
+	return logNamePrefix + time.Now().Format(logDateFormat) + logNameSuffix
+}
 
 // Config holds the logging configuration.
 type Config struct {
@@ -75,14 +83,10 @@ func Init(cfg Config) error {
 		return fmt.Errorf("logging: create directory %s: %w", dir, err)
 	}
 
-	logPath := filepath.Join(dir, DefaultLogName)
+	logPath := filepath.Join(dir, currentLogName())
 
-	// Rotate if current file exceeds size limit.
-	if info, err := os.Stat(logPath); err == nil && info.Size() >= cfg.MaxBytes {
-		if err := rotate(dir, cfg.MaxFiles); err != nil {
-			return fmt.Errorf("logging: rotate: %w", err)
-		}
-	}
+	// Prune old date-based log files, keeping the most recent MaxFiles.
+	pruneOldFiles(dir, cfg.MaxFiles)
 
 	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, os.FileMode(DefaultFileMode))
 	if err != nil {
@@ -163,43 +167,16 @@ func Close() {
 	globalLogger = nil
 }
 
-// rotate shifts existing log files and removes excess.
-func rotate(dir string, maxFiles int) error {
-	base := filepath.Join(dir, DefaultLogName)
-
-	// Shift existing rotated files up: .2 -> .3, .1 -> .2, etc.
-	for i := maxFiles - 1; i >= 1; i-- {
-		src := fmt.Sprintf("%s.%d", base, i)
-		dst := fmt.Sprintf("%s.%d", base, i+1)
-		if _, err := os.Stat(src); err == nil {
-			_ = os.Remove(dst)
-			if err := os.Rename(src, dst); err != nil {
-				return err
-			}
-		}
-	}
-
-	// Current -> .1
-	if err := os.Rename(base, base+".1"); err != nil && !os.IsNotExist(err) {
-		return err
-	}
-
-	// Remove files beyond maxFiles.
-	pruneOldFiles(dir, maxFiles)
-	return nil
-}
-
-
-
-// pruneOldFiles removes rotated log files that exceed maxFiles.
+// pruneOldFiles removes date-based log files that exceed maxFiles,
+// keeping the most recent ones (sorted lexicographically).
 func pruneOldFiles(dir string, maxFiles int) {
-	pattern := filepath.Join(dir, DefaultLogName+".*")
+	pattern := filepath.Join(dir, logNamePrefix+"*"+logNameSuffix)
 	matches, err := filepath.Glob(pattern)
 	if err != nil || len(matches) <= maxFiles {
 		return
 	}
-	sort.Strings(matches)
-	for _, m := range matches[maxFiles:] {
+	sort.Strings(matches) // lexicographic sort on date means oldest first
+	for _, m := range matches[:len(matches)-maxFiles] {
 		_ = os.Remove(m)
 	}
 }
@@ -212,7 +189,7 @@ func resolveDir(configured string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Dir(exe), nil
+	return filepath.Join(filepath.Dir(exe), "data", "logs"), nil
 }
 
 func parseLevel(s string) slog.Level {

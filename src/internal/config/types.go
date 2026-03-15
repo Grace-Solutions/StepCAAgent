@@ -24,6 +24,7 @@ type Settings struct {
 	PollInterval  string       `json:"pollInterval"`
 	LogLevel      string       `json:"logLevel"`
 	LogMaxFiles   int          `json:"logMaxFiles"`
+	Domains       DomainFilter `json:"domains"`       // regex-based domain include/exclude for auto SANs
 	Bootstrap     Bootstrap    `json:"bootstrap"`
 	ConfigSource  ConfigSource `json:"configSource"`
 	Trust         Trust        `json:"trust"`
@@ -31,6 +32,15 @@ type Settings struct {
 	// ResolvedBaseDir is computed at load time from BaseDirectory
 	// with environment variable expansion applied. Not serialized.
 	ResolvedBaseDir string `json:"-"`
+}
+
+// DomainFilter controls which discovered DNS suffixes are used for auto SANs.
+// Both expressions are case-insensitive regular expressions.
+// A domain must match inclusionExpression AND NOT match exclusionExpression to be kept.
+// Defaults: inclusionExpression = ".*" (include all), exclusionExpression = "^$" (exclude nothing).
+type DomainFilter struct {
+	InclusionExpression string `json:"inclusionExpression,omitempty"` // regex to include; default ".*"
+	ExclusionExpression string `json:"exclusionExpression,omitempty"` // regex to exclude; default "^$"
 }
 
 // Bootstrap holds CA bootstrap parameters.

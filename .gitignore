@@ -8,6 +8,9 @@
 *.so
 *.dylib
 
+# Allow release binaries in binaries/ directory
+!binaries/stepcaagent-*
+
 # Test binary, built with `go test -c`
 *.test
 
@@ -32,6 +35,9 @@ binaries/data/
 
 # Live config (use config.json.example as template)
 samples/config.json
+
+# Test scripts
+test-*.ps1
 
 # Editor/IDE
 # .idea/

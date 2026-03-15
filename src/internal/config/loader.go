@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -64,6 +65,58 @@ func (r *Root) ResolveVariables() error {
 	ctx, err := vars.NewContext()
 	if err != nil {
 		return fmt.Errorf("build variable context: %w", err)
+	}
+
+	// Apply regex-based domain filtering.
+	{
+		inclExpr := r.Settings.Domains.InclusionExpression
+		exclExpr := r.Settings.Domains.ExclusionExpression
+		if inclExpr == "" {
+			inclExpr = ".*"
+		}
+		if exclExpr == "" {
+			exclExpr = "^$"
+		}
+
+		inclRe, err := regexp.Compile("(?i)" + inclExpr)
+		if err != nil {
+			return fmt.Errorf("invalid domains.inclusionExpression %q: %w", inclExpr, err)
+		}
+		exclRe, err := regexp.Compile("(?i)" + exclExpr)
+		if err != nil {
+			return fmt.Errorf("invalid domains.exclusionExpression %q: %w", exclExpr, err)
+		}
+
+		// Filter SearchDomains
+		var filteredSuffixes []string
+		for _, s := range ctx.Auto.SearchDomains {
+			if inclRe.MatchString(s) && !exclRe.MatchString(s) {
+				filteredSuffixes = append(filteredSuffixes, s)
+			}
+		}
+		log.Info("domain filter applied",
+			"inclusion", inclExpr,
+			"exclusion", exclExpr,
+			"before", len(ctx.Auto.SearchDomains),
+			"after", len(filteredSuffixes))
+		ctx.Auto.SearchDomains = filteredSuffixes
+
+		// Filter DNSNames — keep bare hostname, drop FQDNs whose suffix isn't kept
+		hostname := strings.ToLower(ctx.Hostname)
+		var filteredDNS []string
+		for _, name := range ctx.Auto.DNSNames {
+			if name == hostname {
+				filteredDNS = append(filteredDNS, name)
+				continue
+			}
+			for _, sfx := range filteredSuffixes {
+				if strings.HasSuffix(name, "."+sfx) {
+					filteredDNS = append(filteredDNS, name)
+					break
+				}
+			}
+		}
+		ctx.Auto.DNSNames = filteredDNS
 	}
 
 	for i := range r.Provisioners {
@@ -267,11 +320,10 @@ type webhookPayload struct {
 	OSProductType string   `json:"osProductType,omitempty"` // "Server" or "Workstation"
 }
 
-// LoadFromURL downloads config from a URL and parses it entirely in memory.
+// LoadFromURL downloads config from a URL and parses it.
 // The URL can point to a static .json file, a webhook, or any API endpoint —
 // as long as the response body is valid JSON configuration.
-// The config is never written to disk; it lives in memory for the lifetime
-// of the process. The destPath parameter is ignored (kept for API compat).
+// The destPath parameter is ignored (kept for API compat).
 //
 // method controls the HTTP method: "GET" (default) performs a simple fetch;
 // "POST" enables webhook mode — the agent auto-discovers the device's hostname
@@ -289,7 +341,7 @@ func LoadFromURL(url, method, header, token, destPath string) (*Root, error) {
 		method = "GET"
 	}
 
-	log.Info("fetching remote configuration (in-memory)", "url", url, "method", method)
+	log.Info("fetching remote configuration", "url", url, "method", method)
 
 	var reqBody io.Reader
 	if method == "POST" {
@@ -317,12 +369,28 @@ func LoadFromURL(url, method, header, token, destPath string) (*Root, error) {
 		req.Header.Set("Content-Type", "application/json")
 	}
 
+	req.Header.Set("User-Agent", "StepCAAgent")
+
 	if header != "" && token != "" {
 		req.Header.Set(header, token)
-		log.Info("using authenticated config fetch", "header", header)
 	}
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	// Disable automatic Accept-Encoding and preserve auth headers
+	// across redirects.
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+		Transport: &http.Transport{
+			DisableCompression: true,
+		},
+		CheckRedirect: func(r *http.Request, via []*http.Request) error {
+			if len(via) > 0 {
+				for k, v := range via[0].Header {
+					r.Header[k] = v
+				}
+			}
+			return nil
+		},
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("config: fetch %s: %w", url, err)
@@ -330,14 +398,15 @@ func LoadFromURL(url, method, header, token, destPath string) (*Root, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("config: fetch %s returned HTTP %d", url, resp.StatusCode)
+		errBody, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("config: fetch %s returned HTTP %d: %s", url, resp.StatusCode, string(errBody))
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("config: read response body: %w", err)
 	}
-	log.Info("remote config downloaded (held in memory)", "bytes", len(body))
+	log.Info("remote config downloaded", "bytes", len(body))
 
 	// Parse JSON directly in memory — no disk write
 	var cfg Root
@@ -357,7 +426,7 @@ func LoadFromURL(url, method, header, token, destPath string) (*Root, error) {
 		log.Warn("config: variable resolution had issues", "error", err)
 	}
 
-	log.Info("remote config loaded (in-memory)", "url", url, "provisioners", len(cfg.Provisioners))
+	log.Info("remote config loaded", "url", url, "provisioners", len(cfg.Provisioners))
 	return &cfg, nil
 }
 
